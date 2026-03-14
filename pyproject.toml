@@ -1,0 +1,31 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# asyncio mode for pytest-asyncio
+asyncio_mode = "auto"
+
+# Display options
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--no-header",
+]
+
+# Custom markers
+markers = [
+    "unit: pure unit tests (no I/O)",
+    "integration: tests that do real file I/O or API calls",
+    "slow: tests that take a long time to run",
+    "llm: tests that require a live LLM service (skip in CI)",
+]
+
+# Ignore files that need live services
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
