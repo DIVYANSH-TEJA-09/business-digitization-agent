@@ -185,28 +185,62 @@ if page == "📤 Upload & Process":
     
     if uploaded_file:
         st.info(f"📦 Selected: **{uploaded_file.name}** ({uploaded_file.size / 1024 / 1024:.2f} MB)")
-        
+
         col1, col2 = st.columns([1, 4])
         with col1:
             upload_btn = st.button("🚀 Start Processing", type="primary", use_container_width=True)
-        
+
         if upload_btn:
             add_log(f"Starting upload: {uploaded_file.name}")
+
+            # Show progress bar during upload
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
             with st.spinner("⏳ Uploading and starting pipeline..."):
+                status_text.text("⏳ Connecting to backend...")
+                progress_bar.progress(10)
+                
                 result = upload_file(uploaded_file)
                 
+                progress_bar.progress(50)
+                status_text.text("⏳ Processing response...")
+
                 if "error" in result:
+                    progress_bar.empty()
+                    status_text.empty()
                     st.error(f"❌ Upload failed: {result['error']}")
                     add_log(f"Upload failed: {result['error']}", "ERROR")
+                    
+                    # Show troubleshooting tips
+                    with st.expander("🔧 Troubleshooting Tips"):
+                        st.markdown("""
+                        **Check if backend is running:**
+                        ```bash
+                        curl http://localhost:8000/api/health
+                        ```
+                        
+                        **Start backend:**
+                        ```bash
+                        cd /path/to/business-digitization-agent
+                        export OLLAMA_BASE_URL=http://localhost:11434/v1
+                        export GROQ_API_KEY="your_api_key"
+                        uvicorn backend.main:app --reload --port 8000
+                        ```
+                        
+                        **Check backend logs for errors.**
+                        """)
                 else:
+                    progress_bar.progress(100)
+                    status_text.text("✅ Upload complete!")
+                    
                     st.session_state.current_job_id = result["job_id"]
                     st.session_state.processing_status = result
                     add_log(f"Upload successful! Job ID: {result['job_id']}")
-                    
+
                     st.success(f"✅ Upload successful! Job ID: `{result['job_id']}`")
                     st.info(result.get("message", "Processing started"))
-                    
+
                     # Show initial file discovery results
                     if "file_collection" in result:
                         fc = result["file_collection"]
@@ -216,11 +250,11 @@ if page == "📤 Upload & Process":
                         cols[1].metric("Spreadsheets", fc.get("total_spreadsheets", 0))
                         cols[2].metric("Images", fc.get("total_images", 0))
                         cols[3].metric("Videos", fc.get("total_videos", 0))
-                    
+
                     st.markdown("---")
                     st.markdown("### ⏳ Processing Status")
                     st.write("The pipeline is now running in the background. Go to **Pipeline View** to see real-time progress.")
-                    
+
                     if st.button("Go to Pipeline View →", type="primary"):
                         st.rerun()
     
