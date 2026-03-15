@@ -1,5 +1,6 @@
 # Environment
 .env
+.env.local
 .venv/
 venv/
 env/
@@ -38,3 +39,9 @@ htmlcov/
 # Logs
 *.log
 logs/
+
+# Scripts with API keys
+start_backend.sh
+check_backend.py
+test_groq_api.py
+SETUP_COMPLETE.md
