@@ -109,11 +109,21 @@ class BusinessDigitizationPipeline:
             if collection.total_files == 0:
                 raise ValueError("ZIP file contains no processable files.")
 
+            # Save file collection to JSON
+            storage_manager.save_file_collection(
+                job_id, collection.model_dump()
+            )
+
             # ─── Phase 2: Document Parsing ────────────────────────
             self._update_progress(
                 "parsing", 15, f"Parsing {len(collection.documents) + len(collection.spreadsheets)} documents..."
             )
             parsed_docs = self._parse_documents(collection)
+
+            # Save parsed documents to JSON
+            storage_manager.save_parsed_documents(
+                job_id, [doc.model_dump() for doc in parsed_docs]
+            )
 
             # ─── Phase 2.5: PageIndex Tree Generation ─────────────
             self._update_progress(
@@ -122,11 +132,21 @@ class BusinessDigitizationPipeline:
             )
             doc_indexes = self.pageindex.build_indexes(parsed_docs, job_id)
 
+            # Save document indexes to JSON
+            storage_manager.save_document_indexes(
+                job_id, [idx.model_dump() for idx in doc_indexes]
+            )
+
             # ─── Phase 3: Table Extraction ────────────────────────
             self._update_progress(
                 "table_extraction", 35, "Extracting tables..."
             )
             tables = self.table_extraction.extract_from_multiple(parsed_docs)
+
+            # Save extracted tables to JSON
+            storage_manager.save_tables(
+                job_id, [table.model_dump() for table in tables]
+            )
 
             # ─── Phase 4: Media Extraction ────────────────────────
             self._update_progress(
@@ -140,12 +160,26 @@ class BusinessDigitizationPipeline:
                 job_id=job_id,
             )
 
+            # Save media collection to JSON
+            storage_manager.save_media_collection(
+                job_id, media.model_dump()
+            )
+
+            # Build and save PDF-wise data with page-level metadata
+            pdf_wise_data = self._build_pdf_wise_data(parsed_docs, media, job_id)
+            storage_manager.save_pdf_wise_data(job_id, pdf_wise_data)
+
             # ─── Phase 5: Vision Analysis ─────────────────────────
             self._update_progress(
                 "vision_analysis", 55,
                 f"Analyzing {len(media.images)} images with AI..."
             )
             image_analyses = self.vision_agent.analyze_batch(media.images)
+
+            # Save image analyses to JSON
+            storage_manager.save_image_analyses(
+                job_id, [analysis.model_dump() for analysis in image_analyses]
+            )
 
             # ─── Phase 6: Schema Mapping ──────────────────────────
             self._update_progress(
@@ -175,6 +209,21 @@ class BusinessDigitizationPipeline:
             validation_json = json.dumps(validation.model_dump(), indent=2, default=str)
             val_path = storage_manager.get_job_subdir(job_id, "index") / "validation.json"
             val_path.write_text(validation_json, encoding="utf-8")
+
+            # Save complete job data export (all artifacts in one file)
+            complete_data = {
+                "job_id": job_id,
+                "file_collection": collection.model_dump(),
+                "parsed_documents": [doc.model_dump() for doc in parsed_docs],
+                "document_indexes": [idx.model_dump() for idx in doc_indexes],
+                "extracted_tables": [table.model_dump() for table in tables],
+                "media_collection": media.model_dump(),
+                "image_analyses": [analysis.model_dump() for analysis in image_analyses],
+                "business_profile": profile.model_dump(),
+                "validation": validation.model_dump(),
+                "processing_time_seconds": time.time() - start_time,
+            }
+            storage_manager.save_complete_job_data(job_id, complete_data)
 
             elapsed = time.time() - start_time
             self._update_progress(
@@ -235,6 +284,95 @@ class BusinessDigitizationPipeline:
 
         logger.info(f"Parsed {len(parsed_docs)} documents successfully")
         return parsed_docs
+
+    def _build_pdf_wise_data(
+        self,
+        parsed_docs: List[ParsedDocument],
+        media: MediaCollection,
+        job_id: str,
+    ) -> Dict:
+        """
+        Build PDF-wise organized data with page-level metadata.
+        
+        Groups images by their source PDF with YOLO detections and vision descriptions.
+        """
+        pdf_wise_data = {
+            "job_id": job_id,
+            "pdfs": {},
+            "summary": {
+                "total_pdfs": 0,
+                "total_images_extracted": 0,
+                "total_yolo_detections": 0,
+            }
+        }
+        
+        # Group images by source PDF
+        images_by_pdf = {}
+        for img in media.images:
+            source_doc = img.source_doc or ""
+            if source_doc:
+                if source_doc not in images_by_pdf:
+                    images_by_pdf[source_doc] = []
+                images_by_pdf[source_doc].append(img)
+        
+        # Build PDF-wise structure
+        for doc in parsed_docs:
+            if doc.file_type.value == "pdf":
+                pdf_name = Path(doc.source_file).name
+                pdf_id = doc.doc_id
+                
+                pdf_images = images_by_pdf.get(doc.source_file, [])
+                
+                # Organize by page
+                pages_data = {}
+                for img in pdf_images:
+                    page_num = img.source_page or 1
+                    if page_num not in pages_data:
+                        pages_data[page_num] = {
+                            "page_number": page_num,
+                            "images": [],
+                        }
+                    
+                    img_data = {
+                        "image_id": img.image_id,
+                        "file_path": img.file_path,
+                        "width": img.width,
+                        "height": img.height,
+                        "file_size": img.file_size,
+                        "yolo_detections": img.metadata.get("yolo_detections", []),
+                        "vision_description": img.metadata.get("vision_description", {}),
+                        "pdf_coordinates": img.metadata.get("pdf_coordinates", {}),
+                    }
+                    
+                    pages_data[page_num]["images"].append(img_data)
+                
+                pdf_wise_data["pdfs"][pdf_id] = {
+                    "pdf_name": pdf_name,
+                    "source_file": doc.source_file,
+                    "total_pages": doc.total_pages,
+                    "total_images": len(pdf_images),
+                    "pages": pages_data,
+                    "document_metadata": {
+                        "title": doc.metadata.title,
+                        "author": doc.metadata.author,
+                        "creation_date": doc.metadata.creation_date,
+                    } if doc.metadata else {},
+                }
+                
+                # Update summary
+                pdf_wise_data["summary"]["total_pdfs"] += 1
+                pdf_wise_data["summary"]["total_images_extracted"] += len(pdf_images)
+                for img in pdf_images:
+                    detections = img.metadata.get("yolo_detections", [])
+                    pdf_wise_data["summary"]["total_yolo_detections"] += len(detections)
+        
+        logger.info(
+            f"Built PDF-wise data: {pdf_wise_data['summary']['total_pdfs']} PDFs, "
+            f"{pdf_wise_data['summary']['total_images_extracted']} images, "
+            f"{pdf_wise_data['summary']['total_yolo_detections']} YOLO detections"
+        )
+        
+        return pdf_wise_data
 
 
 # Convenience function to run the pipeline

@@ -21,6 +21,7 @@
             <nav class="nav">
                 <button class="nav-btn active" data-view="upload" id="nav-upload">Upload</button>
                 <button class="nav-btn" data-view="profile" id="nav-profile">Profile</button>
+                <button class="nav-btn" data-view="data" id="nav-data">Data Viewer</button>
                 <button class="nav-btn" data-view="health" id="nav-health">System</button>
             </nav>
         </div>
@@ -198,6 +199,120 @@
                         View Raw JSON
                     </button>
                     <pre class="json-view" id="json-view" style="display:none"></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- ──────── DATA VIEWER VIEW ──────── -->
+        <section id="view-data" class="view">
+            <div class="data-container">
+                <!-- Job ID Input -->
+                <div class="data-header">
+                    <h2 class="section-title">📊 Data Viewer</h2>
+                    <div class="job-search">
+                        <input type="text" id="job-id-input" placeholder="Enter Job ID (e.g., 61980c44-770)" />
+                        <button class="btn-primary" id="btn-load-job">Load Data</button>
+                    </div>
+                </div>
+
+                <!-- Data Tabs -->
+                <div class="data-tabs" id="data-tabs" style="display:none">
+                    <button class="tab-btn active" data-tab="overview">Overview</button>
+                    <button class="tab-btn" data-tab="pdf-docs">PDF Documents</button>
+                    <button class="tab-btn" data-tab="documents">All Documents</button>
+                    <button class="tab-btn" data-tab="tables">Tables</button>
+                    <button class="tab-btn" data-tab="media">Media</button>
+                    <button class="tab-btn" data-tab="profile">Business Profile</button>
+                    <button class="tab-btn" data-tab="validation">Validation</button>
+                </div>
+
+                <!-- Tab Contents -->
+                <div class="tab-content-container" id="tab-content-container" style="display:none">
+                    <!-- Overview Tab -->
+                    <div class="tab-content active" id="tab-overview">
+                        <div class="overview-grid">
+                            <div class="stat-card">
+                                <div class="stat-icon">📄</div>
+                                <div class="stat-value" id="stat-docs">0</div>
+                                <div class="stat-label">Documents</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">📊</div>
+                                <div class="stat-value" id="stat-tables">0</div>
+                                <div class="stat-label">Tables</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">🖼️</div>
+                                <div class="stat-value" id="stat-images">0</div>
+                                <div class="stat-label">Images</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">✅</div>
+                                <div class="stat-value" id="stat-completeness">0%</div>
+                                <div class="stat-label">Completeness</div>
+                            </div>
+                        </div>
+                        <div class="data-section-card">
+                            <h3>📁 File Collection</h3>
+                            <div id="file-collection-content" class="content-area"></div>
+                        </div>
+                    </div>
+
+                    <!-- PDF Documents Tab -->
+                    <div class="tab-content" id="tab-pdf-docs">
+                        <div class="data-section-card">
+                            <h3>📕 PDF Documents with Images & Detections</h3>
+                            <div id="pdf-docs-content" class="content-area"></div>
+                        </div>
+                    </div>
+
+                    <!-- Documents Tab -->
+                    <div class="tab-content" id="tab-documents">
+                        <div class="data-section-card">
+                            <h3>📄 Parsed Documents</h3>
+                            <div id="documents-content" class="content-area"></div>
+                        </div>
+                    </div>
+
+                    <!-- Tables Tab -->
+                    <div class="tab-content" id="tab-tables">
+                        <div class="data-section-card">
+                            <h3>📊 Extracted Tables</h3>
+                            <div id="tables-content" class="content-area"></div>
+                        </div>
+                    </div>
+
+                    <!-- Media Tab -->
+                    <div class="tab-content" id="tab-media">
+                        <div class="data-section-card">
+                            <h3>🖼️ Media Collection</h3>
+                            <div id="media-content" class="content-area"></div>
+                        </div>
+                        <div class="data-section-card">
+                            <h3>👁️ Image Analysis</h3>
+                            <div id="image-analysis-content" class="content-area"></div>
+                        </div>
+                    </div>
+
+                    <!-- Profile Tab -->
+                    <div class="tab-content" id="tab-profile">
+                        <div id="profile-view-content" class="content-area"></div>
+                    </div>
+
+                    <!-- Validation Tab -->
+                    <div class="tab-content" id="tab-validation">
+                        <div class="data-section-card">
+                            <h3>✅ Validation Results</h3>
+                            <div id="validation-content" class="content-area"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div class="data-empty" id="data-empty">
+                    <div class="empty-icon">🔍</div>
+                    <h3>No Job Loaded</h3>
+                    <p>Enter a Job ID above to view extracted data</p>
                 </div>
             </div>
         </section>

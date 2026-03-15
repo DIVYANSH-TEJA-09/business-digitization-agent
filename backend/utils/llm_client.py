@@ -43,32 +43,73 @@ class LLMClient:
         self._groq_client: Optional[OpenAI] = None
         self._ollama_client: Optional[OpenAI] = None
         self._llm_call_count = 0
+        self._ollama_models_cached: Optional[List[str]] = None
+        self._groq_api_key_validated = False
+        logger.info("[LLMClient] Initializing LLM client...")
 
     @property
     def groq_client(self) -> OpenAI:
         """Lazy-initialized Groq client."""
         if self._groq_client is None:
-            if not settings.groq_api_key:
-                raise LLMError(
-                    "GROQ_API_KEY not set. Please add it to your .env file."
+            logger.info("[LLMClient] Initializing Groq client...")
+            if not settings.groq_api_key or settings.groq_api_key.startswith("your_"):
+                logger.warning("[LLMClient] GROQ_API_KEY not set or using placeholder. Groq features will be unavailable.")
+                # Create a dummy client that will fail gracefully
+                self._groq_client = OpenAI(
+                    api_key="sk-dummy-key",
+                    base_url=settings.groq_base_url,
                 )
-            self._groq_client = OpenAI(
-                api_key=settings.groq_api_key,
-                base_url=settings.groq_base_url,
-            )
-            logger.info("Groq client initialized")
+            else:
+                self._groq_client = OpenAI(
+                    api_key=settings.groq_api_key.strip(),
+                    base_url=settings.groq_base_url,
+                )
+                logger.info(f"[LLMClient] Groq client initialized with API key (model: {settings.groq_model})")
+            logger.info(f"[LLMClient] Groq client initialized (model: {settings.groq_model})")
         return self._groq_client
 
     @property
     def ollama_client(self) -> OpenAI:
         """Lazy-initialized Ollama client."""
         if self._ollama_client is None:
+            logger.info(f"[LLMClient] Initializing Ollama client ({settings.ollama_base_url})...")
+            # Use API key from settings if available (for Ollama Cloud)
+            api_key = settings.ollama_api_key if settings.ollama_api_key else "ollama"
             self._ollama_client = OpenAI(
-                api_key="ollama",  # Ollama doesn't need a real key
+                api_key=api_key,
                 base_url=settings.ollama_base_url,
             )
-            logger.info("Ollama client initialized")
+            logger.info(f"[LLMClient] Ollama client initialized (model: {settings.ollama_vision_model})")
+            
+            # Verify model is available
+            try:
+                models = self._get_ollama_models()
+                if settings.ollama_vision_model not in models:
+                    logger.warning(
+                        f"[LLMClient] Model '{settings.ollama_vision_model}' not found in Ollama. "
+                        f"Available models: {models}. "
+                        f"Run: ollama pull {settings.ollama_vision_model}"
+                    )
+                else:
+                    logger.info(f"[LLMClient] Model '{settings.ollama_vision_model}' is available")
+            except Exception as e:
+                logger.warning(f"[LLMClient] Could not verify Ollama models: {e}")
+                
         return self._ollama_client
+
+    def _get_ollama_models(self) -> List[str]:
+        """Get list of available Ollama models (cached)."""
+        if self._ollama_models_cached is not None:
+            return self._ollama_models_cached
+        
+        try:
+            response = self.ollama_client.models.list()
+            self._ollama_models_cached = [m.id for m in response.data]
+            logger.info(f"[LLMClient] Found {len(self._ollama_models_cached)} Ollama models: {self._ollama_models_cached}")
+            return self._ollama_models_cached
+        except Exception as e:
+            logger.error(f"[LLMClient] Failed to list Ollama models: {e}")
+            return []
 
     @property
     def call_count(self) -> int:
@@ -155,9 +196,12 @@ class LLMClient:
         Returns:
             Analysis text from the model
         """
+        logger.info(f"[LLMClient] Analyzing image: {Path(image_path).name}")
+        
         # Encode image to base64
         image_data = self._encode_image(image_path)
         if not image_data:
+            logger.error(f"[LLMClient] Could not read image: {image_path}")
             raise LLMError(f"Could not read image: {image_path}")
 
         # Determine MIME type
@@ -189,11 +233,14 @@ class LLMClient:
             }
         ]
 
-        return self.chat_ollama(
+        logger.info(f"[LLMClient] Sending vision request to Ollama (model: {settings.ollama_vision_model})")
+        result = self.chat_ollama(
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        logger.info(f"[LLMClient] Vision analysis complete for {Path(image_path).name}")
+        return result
 
     def _chat_with_retry(
         self,
@@ -240,6 +287,18 @@ class LLMClient:
             except Exception as e:
                 error_str = str(e).lower()
                 last_error = e
+                
+                # Check for API key errors
+                if "401" in str(e) or "invalid_api_key" in error_str or "unauthorized" in error_str:
+                    logger.error(
+                        f"[{provider}] API Key Error: The API key is invalid or expired. "
+                        f"Please check your .env file and ensure GROQ_API_KEY is correct. "
+                        f"Get a new key from: https://console.groq.com/keys"
+                    )
+                    raise LLMError(
+                        f"{provider} API key is invalid. "
+                        f"Please check your .env file and visit https://console.groq.com/keys"
+                    ) from e
 
                 # Rate limit handling
                 if "429" in str(e) or "rate" in error_str:
@@ -284,28 +343,32 @@ class LLMClient:
 
     def check_ollama_health(self) -> bool:
         """Check if Ollama is running and the vision model is available."""
+        logger.info("[LLMClient] Checking Ollama health...")
         try:
-            response = self.ollama_client.models.list()
-            models = [m.id for m in response.data]
+            models = self._get_ollama_models()
             model_available = settings.ollama_vision_model in models
-            if not model_available:
+            if model_available:
+                logger.info(f"[LLMClient] Ollama health check PASSED - model '{settings.ollama_vision_model}' available")
+            else:
                 logger.warning(
-                    f"Ollama is running but model '{settings.ollama_vision_model}' "
+                    f"[LLMClient] Ollama is running but model '{settings.ollama_vision_model}' "
                     f"not found. Available: {models}. "
                     f"Run: ollama pull {settings.ollama_vision_model}"
                 )
             return model_available
         except Exception as e:
-            logger.error(f"Ollama health check failed: {e}")
+            logger.error(f"[LLMClient] Ollama health check FAILED: {e}")
             return False
 
     def check_groq_health(self) -> bool:
         """Check if Groq API is reachable."""
+        logger.info("[LLMClient] Checking Groq health...")
         try:
             response = self.groq_client.models.list()
+            logger.info("[LLMClient] Groq health check PASSED")
             return True
         except Exception as e:
-            logger.error(f"Groq health check failed: {e}")
+            logger.error(f"[LLMClient] Groq health check FAILED: {e}")
             return False
 
 

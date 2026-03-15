@@ -6,6 +6,7 @@ Handles job directory creation, file organization, and cleanup.
 Each job gets its own directory structure under storage/extracted/<job_id>.
 """
 
+import json
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -138,6 +139,166 @@ class StorageManager:
         index_path.write_text(index_data, encoding="utf-8")
         logger.debug(f"Saved index: {index_path}")
         return index_path
+
+    def save_file_collection(self, job_id: str, collection_data: dict) -> Path:
+        """
+        Save the file collection JSON for a job.
+
+        Args:
+            job_id: Job identifier
+            collection_data: Dict of the file collection
+
+        Returns:
+            Path to the saved file
+        """
+        index_dir = self.get_job_subdir(job_id, "index")
+        file_path = index_dir / "file_collection.json"
+        file_path.write_text(
+            json.dumps(collection_data, indent=2, default=str),
+            encoding="utf-8"
+        )
+        logger.info(f"Saved file collection: {file_path}")
+        return file_path
+
+    def save_parsed_documents(self, job_id: str, parsed_docs: list) -> Path:
+        """
+        Save all parsed documents JSON for a job.
+
+        Args:
+            job_id: Job identifier
+            parsed_docs: List of ParsedDocument model_dump() dicts
+
+        Returns:
+            Path to the saved file
+        """
+        index_dir = self.get_job_subdir(job_id, "index")
+        file_path = index_dir / "parsed_documents.json"
+        file_path.write_text(
+            json.dumps(parsed_docs, indent=2, default=str),
+            encoding="utf-8"
+        )
+        logger.info(f"Saved {len(parsed_docs)} parsed documents: {file_path}")
+        return file_path
+
+    def save_tables(self, job_id: str, tables: list) -> Path:
+        """
+        Save all extracted tables JSON for a job.
+
+        Args:
+            job_id: Job identifier
+            tables: List of StructuredTable model_dump() dicts
+
+        Returns:
+            Path to the saved file
+        """
+        index_dir = self.get_job_subdir(job_id, "index")
+        file_path = index_dir / "extracted_tables.json"
+        file_path.write_text(
+            json.dumps(tables, indent=2, default=str),
+            encoding="utf-8"
+        )
+        logger.info(f"Saved {len(tables)} tables: {file_path}")
+        return file_path
+
+    def save_media_collection(self, job_id: str, media_data: dict) -> Path:
+        """
+        Save the media collection JSON for a job.
+
+        Args:
+            job_id: Job identifier
+            media_data: Dict of the media collection
+
+        Returns:
+            Path to the saved file
+        """
+        index_dir = self.get_job_subdir(job_id, "index")
+        file_path = index_dir / "media_collection.json"
+        file_path.write_text(
+            json.dumps(media_data, indent=2, default=str),
+            encoding="utf-8"
+        )
+        logger.info(f"Saved media collection: {file_path}")
+        return file_path
+
+    def save_image_analyses(self, job_id: str, analyses: list) -> Path:
+        """
+        Save all image analysis results JSON for a job.
+
+        Args:
+            job_id: Job identifier
+            analyses: List of ImageAnalysis model_dump() dicts
+
+        Returns:
+            Path to the saved file
+        """
+        index_dir = self.get_job_subdir(job_id, "index")
+        file_path = index_dir / "image_analyses.json"
+        file_path.write_text(
+            json.dumps(analyses, indent=2, default=str),
+            encoding="utf-8"
+        )
+        logger.info(f"Saved {len(analyses)} image analyses: {file_path}")
+        return file_path
+
+    def save_document_indexes(self, job_id: str, indexes: list) -> Path:
+        """
+        Save all document indexes JSON for a job.
+
+        Args:
+            job_id: Job identifier
+            indexes: List of DocumentIndex model_dump() dicts
+
+        Returns:
+            Path to the saved file
+        """
+        index_dir = self.get_job_subdir(job_id, "index")
+        file_path = index_dir / "document_indexes.json"
+        file_path.write_text(
+            json.dumps(indexes, indent=2, default=str),
+            encoding="utf-8"
+        )
+        logger.info(f"Saved {len(indexes)} document indexes: {file_path}")
+        return file_path
+
+    def save_complete_job_data(self, job_id: str, job_data: dict) -> Path:
+        """
+        Save a complete job data export (all artifacts in one file).
+
+        Args:
+            job_id: Job identifier
+            job_data: Dict containing all job artifacts
+
+        Returns:
+            Path to the saved file
+        """
+        index_dir = self.get_job_subdir(job_id, "index")
+        file_path = index_dir / "complete_job_data.json"
+        file_path.write_text(
+            json.dumps(job_data, indent=2, default=str),
+            encoding="utf-8"
+        )
+        logger.info(f"Saved complete job data: {file_path}")
+        return file_path
+
+    def save_pdf_wise_data(self, job_id: str, pdf_data: dict) -> Path:
+        """
+        Save PDF-wise organized data with page-level metadata.
+
+        Args:
+            job_id: Job identifier
+            pdf_data: Dict with PDF-wise organized data
+
+        Returns:
+            Path to the saved file
+        """
+        index_dir = self.get_job_subdir(job_id, "index")
+        file_path = index_dir / "pdf_wise_data.json"
+        file_path.write_text(
+            json.dumps(pdf_data, indent=2, default=str),
+            encoding="utf-8"
+        )
+        logger.info(f"Saved PDF-wise data: {file_path}")
+        return file_path
 
     def cleanup_job(self, job_id: str) -> None:
         """

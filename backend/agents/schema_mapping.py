@@ -77,11 +77,11 @@ class SchemaMappingAgent:
         context = self._build_context(parsed_docs, tables)
 
         # Step 1: Classify business type
-        business_type = self._classify_business_type(context)
+        business_type = self._classify_business_type(context, image_analyses)
         logger.info(f"Business type: {business_type.value}")
 
         # Step 2: Extract business info
-        business_info = self._extract_business_info(context)
+        business_info = self._extract_business_info(context, image_analyses)
 
         # Step 3: Extract products (if applicable)
         products = None
@@ -93,6 +93,12 @@ class SchemaMappingAgent:
         if business_type in (BusinessType.SERVICE, BusinessType.MIXED):
             services = self._extract_services(context, tables, image_analyses)
 
+        # Build media list from image analyses
+        media_ids = [
+            img.image_id for img in image_analyses
+            if img.is_product or img.is_service_related
+        ]
+
         profile = BusinessProfile(
             business_type=business_type,
             business_info=business_info,
@@ -103,6 +109,7 @@ class SchemaMappingAgent:
                 llm_calls_made=self.client.call_count,
                 confidence_score=0.75,
             ),
+            data_provenance=self._build_provenance(parsed_docs, tables, image_analyses),
         )
 
         logger.info("Schema mapping complete")
@@ -134,8 +141,18 @@ class SchemaMappingAgent:
         combined = "\n\n".join(parts)
         return truncate_text(combined, max_chars=40000)
 
-    def _classify_business_type(self, context: str) -> BusinessType:
+    def _classify_business_type(self, context: str, image_analyses: List[ImageAnalysis] = None) -> BusinessType:
         """Classify the business as product, service, or mixed."""
+        # Also consider image analysis results
+        image_hints = []
+        if image_analyses:
+            product_images = sum(1 for img in image_analyses if img.is_product)
+            service_images = sum(1 for img in image_analyses if img.is_service_related)
+            if product_images > service_images:
+                image_hints.append("product")
+            elif service_images > product_images:
+                image_hints.append("service")
+
         prompt = f"""Analyze the following business documents and determine the business type.
 
 RULES:
@@ -165,8 +182,18 @@ Business type:"""
         }
         return type_map.get(response_lower, BusinessType.UNKNOWN)
 
-    def _extract_business_info(self, context: str) -> BusinessInfo:
+    def _extract_business_info(self, context: str, image_analyses: List[ImageAnalysis] = None) -> BusinessInfo:
         """Extract core business information."""
+        # Add image analysis context if available
+        image_context = ""
+        if image_analyses:
+            product_images = [img for img in image_analyses if img.is_product]
+            service_images = [img for img in image_analyses if img.is_service_related]
+            if product_images or service_images:
+                image_context = "\n\nIMAGE ANALYSIS:\n"
+                for img in image_analyses[:10]:  # Limit to first 10
+                    image_context += f"- {img.description} (category: {img.category.value}, tags: {', '.join(img.tags)})\n"
+
         prompt = f"""Extract business information from the following documents.
 Return a JSON object with ONLY the fields you can find. Do NOT invent or guess information.
 If a field is not found in the documents, set it to null.
@@ -203,6 +230,7 @@ Required JSON format:
 
 DOCUMENTS:
 {context[:15000]}
+{image_context}
 
 JSON:"""
 
@@ -431,3 +459,42 @@ Respond with JSON: {{"services": [...]}}"""
                 logger.debug(f"Error parsing service: {e}")
 
         return services
+
+    def _build_provenance(
+        self,
+        parsed_docs: List[ParsedDocument],
+        tables: List[StructuredTable],
+        image_analyses: List[ImageAnalysis],
+    ) -> List[DataProvenance]:
+        """Build data provenance tracking for all extracted data."""
+        provenance = []
+
+        # Track document sources
+        for doc in parsed_docs:
+            provenance.append(DataProvenance(
+                field_name="document_content",
+                source_doc=doc.source_file,
+                extraction_method="parser",
+                confidence=0.9,
+            ))
+
+        # Track table sources
+        for table in tables:
+            provenance.append(DataProvenance(
+                field_name=f"table_{table.table_type.value}",
+                source_doc=table.source_doc,
+                source_page=table.source_page,
+                extraction_method="rule-based",
+                confidence=table.confidence,
+            ))
+
+        # Track image analysis sources
+        for img_analysis in image_analyses:
+            provenance.append(DataProvenance(
+                field_name=f"image_{img_analysis.category.value}",
+                source_doc=img_analysis.image_id,
+                extraction_method="vision-ai",
+                confidence=img_analysis.confidence,
+            ))
+
+        return provenance

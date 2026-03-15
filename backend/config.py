@@ -31,12 +31,16 @@ class Settings(BaseSettings):
 
     # --- Ollama (Qwen 3.5 0.8B for vision) ---
     ollama_base_url: str = Field(
-        default="http://localhost:11434/v1",
+        default="https://ollama.cloud/v1",
         description="Ollama API base URL"
     )
     ollama_vision_model: str = Field(
         default="qwen3.5:0.8b",
         description="Ollama vision model name"
+    )
+    ollama_api_key: str = Field(
+        default="",
+        description="Ollama Cloud API key"
     )
 
     # --- Storage Paths ---

@@ -93,6 +93,10 @@ function switchView(viewName) {
     });
 
     if (viewName === 'health') checkHealth();
+    if (viewName === 'data' && state.currentJobId) {
+        // Auto-load last job if viewing data tab
+        loadJobData();
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -476,4 +480,494 @@ function formatSize(bytes) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// DATA VIEWER
+// ═══════════════════════════════════════════════════════════
+
+let currentJobData = null;
+
+// Data viewer event listeners
+$('btn-load-job')?.addEventListener('click', loadJobData);
+$('job-id-input')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') loadJobData();
+});
+
+// Tab switching for data viewer
+$$('.data-tabs .tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        switchDataTab(tab);
+    });
+});
+
+async function loadJobData() {
+    const jobId = $('job-id-input').value.trim();
+    if (!jobId) {
+        alert('Please enter a Job ID');
+        return;
+    }
+
+    try {
+        $('btn-load-job').disabled = true;
+        $('btn-load-job').textContent = 'Loading...';
+
+        const res = await fetch(`${API_BASE}/api/job-data/${jobId}`);
+        if (!res.ok) {
+            throw new Error('Job data not found. Make sure the job has completed processing.');
+        }
+
+        currentJobData = await res.json();
+        state.currentJobId = jobId;
+
+        // Show tabs and content, hide empty state
+        $('data-tabs').style.display = 'flex';
+        $('tab-content-container').style.display = 'block';
+        $('data-empty').style.display = 'none';
+
+        // Render all sections
+        renderOverview(currentJobData);
+        renderPdfDocs(currentJobData);  // New: Render PDF-wise data
+        renderDocuments(currentJobData);
+        renderTables(currentJobData);
+        renderMedia(currentJobData);
+        renderProfileView(currentJobData);
+        renderValidation(currentJobData);
+
+    } catch (err) {
+        alert(err.message);
+        $('data-tabs').style.display = 'none';
+        $('tab-content-container').style.display = 'none';
+        $('data-empty').style.display = 'block';
+    } finally {
+        $('btn-load-job').disabled = false;
+        $('btn-load-job').textContent = 'Load Data';
+    }
+}
+
+function switchDataTab(tabName) {
+    // Update tab buttons
+    $$('.data-tabs .tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
+
+    // Update tab content
+    $$('.tab-content').forEach(content => {
+        content.classList.toggle('active', content.id === `tab-${tabName}`);
+    });
+}
+
+function renderOverview(data) {
+    // Count stats
+    const docCount = data.parsed_documents?.length || 0;
+    const tableCount = data.extracted_tables?.length || 0;
+    const imageCount = data.media_collection?.images?.length || 0;
+    const completeness = data.validation?.completeness_score || 0;
+
+    $('stat-docs').textContent = docCount;
+    $('stat-tables').textContent = tableCount;
+    $('stat-images').textContent = imageCount;
+    $('stat-completeness').textContent = `${Math.round(completeness * 100)}%`;
+
+    // File collection
+    const fc = data.file_collection;
+    if (fc) {
+        let html = `<div class="overview-grid" style="margin-bottom:1rem">`;
+        html += `<div class="stat-card"><div class="stat-value">${fc.total_files || 0}</div><div class="stat-label">Total Files</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${fc.documents?.length || 0}</div><div class="stat-label">Documents</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${fc.spreadsheets?.length || 0}</div><div class="stat-label">Spreadsheets</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${fc.images?.length || 0}</div><div class="stat-label">Images</div></div>`;
+        html += `</div>`;
+
+        if (fc.directory_structure) {
+            html += `<h4 style="margin:1rem 0 0.5rem">Directory Structure</h4>`;
+            html += `<pre style="background:var(--bg-primary);padding:1rem;border-radius:8px;overflow-x:auto;font-size:0.875rem">${JSON.stringify(fc.directory_structure, null, 2)}</pre>`;
+        }
+
+        $('file-collection-content').innerHTML = html;
+    }
+}
+
+async function renderPdfDocs(data) {
+    // Fetch PDF-wise data
+    const jobId = state.currentJobId;
+    try {
+        const res = await fetch(`${API_BASE}/api/job-data/${jobId}/pdf-wise`);
+        if (!res.ok) {
+            $('pdf-docs-content').innerHTML = '<p style="color:var(--text-secondary)">PDF-wise data not available. Processing may still be in progress.</p>';
+            return;
+        }
+        
+        const pdfData = await res.json();
+        
+        if (!pdfData.pdfs || Object.keys(pdfData.pdfs).length === 0) {
+            $('pdf-docs-content').innerHTML = '<p style="color:var(--text-secondary)">No PDF documents with images found</p>';
+            return;
+        }
+        
+        // Summary
+        let html = `<div class="overview-grid" style="margin-bottom:1.5rem">`;
+        html += `<div class="stat-card"><div class="stat-value">${pdfData.summary?.total_pdfs || 0}</div><div class="stat-label">PDFs Processed</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${pdfData.summary?.total_images_extracted || 0}</div><div class="stat-label">Images Extracted</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${pdfData.summary?.total_yolo_detections || 0}</div><div class="stat-label">YOLO Detections</div></div>`;
+        html += `</div>`;
+        
+        // PDF-wise sections
+        Object.entries(pdfData.pdfs).forEach(([pdfId, pdf]) => {
+            const pdfName = pdf.pdf_name || 'Unknown PDF';
+            const totalPages = pdf.total_pages || 0;
+            const totalImages = pdf.total_images || 0;
+            
+            html += `<div class="data-section-card" style="margin-top:1.5rem">`;
+            html += `<h3>📕 ${escapeHtml(pdfName)}</h3>`;
+            html += `<div style="display:flex;gap:1rem;margin-bottom:1rem;font-size:0.875rem;color:var(--text-secondary)">`;
+            html += `<span>📄 ${totalPages} pages</span>`;
+            html += `<span>🖼️ ${totalImages} images</span>`;
+            if (pdf.document_metadata?.title) {
+                html += `<span>📝 ${escapeHtml(pdf.document_metadata.title)}</span>`;
+            }
+            html += `</div>`;
+            
+            // Pages with images
+            if (pdf.pages && Object.keys(pdf.pages).length > 0) {
+                html += `<h4 style="margin:1rem 0">Pages with Images</h4>`;
+                
+                Object.entries(pdf.pages).forEach(([pageNum, pageData]) => {
+                    html += `<div class="document-item">`;
+                    html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">`;
+                    html += `<strong style="color:var(--accent-primary)">Page ${pageData.page_number}</strong>`;
+                    html += `<span style="font-size:0.875rem;color:var(--text-secondary)">${pageData.images?.length || 0} image(s)</span>`;
+                    html += `</div>`;
+                    
+                    // Images grid for this page
+                    if (pageData.images && pageData.images.length > 0) {
+                        html += `<div class="media-grid">`;
+                        pageData.images.forEach((img, imgIdx) => {
+                            const filePath = img.file_path || '';
+                            const fileName = filePath.split('/').pop() || `Image ${imgIdx + 1}`;
+                            const fileUrl = filePath.startsWith('http') ? filePath : `/${filePath}`;
+                            
+                            html += `<div class="media-item">`;
+                            
+                            // Image preview
+                            if (filePath && filePath !== '') {
+                                html += `<img src="${fileUrl}" alt="${escapeHtml(fileName)}" class="media-preview" onerror="this.style.display='none';this.parentElement.querySelector('.no-image').style.display='flex'" />`;
+                                html += `<div class="no-image" style="display:none;height:150px;align-items:center;justify-content:center;background:var(--bg-primary);border-radius:8px;margin-bottom:0.75rem;color:var(--text-secondary)">Image not available</div>`;
+                            } else {
+                                html += `<div class="no-image" style="height:150px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);border-radius:8px;margin-bottom:0.75rem;color:var(--text-secondary)">No image file</div>`;
+                            }
+                            
+                            html += `<div class="media-info">`;
+                            html += `<h4 style="font-size:0.875rem">${escapeHtml(fileName)}</h4>`;
+                            html += `<p style="font-size:0.75rem">${img.width || 0} × ${img.height || 0} • ${formatSize(img.file_size || 0)}</p>`;
+                            
+                            // YOLO detections
+                            if (img.yolo_detections && img.yolo_detections.length > 0) {
+                                html += `<div style="margin-top:0.5rem">`;
+                                html += `<span style="font-size:0.75rem;color:var(--accent-primary)">🎯 YOLO Detections (${img.yolo_detections.length}):</span>`;
+                                html += `<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.25rem">`;
+                                img.yolo_detections.slice(0, 5).forEach(det => {
+                                    html += `<span class="tag">${escapeHtml(det.class)} ${(det.confidence * 100).toFixed(0)}%</span>`;
+                                });
+                                if (img.yolo_detections.length > 5) {
+                                    html += `<span class="tag">+${img.yolo_detections.length - 5} more</span>`;
+                                }
+                                html += `</div>`;
+                                html += `</div>`;
+                            }
+                            
+                            // Vision description
+                            if (img.vision_description && img.vision_description.description) {
+                                html += `<div style="margin-top:0.5rem">`;
+                                html += `<span style="font-size:0.75rem;color:var(--accent-primary)">👁️ AI Description:</span>`;
+                                html += `<p style="font-size:0.75rem;margin-top:0.25rem;color:var(--text-secondary)">${escapeHtml(img.vision_description.description)}</p>`;
+                                
+                                if (img.vision_description.tags && img.vision_description.tags.length > 0) {
+                                    html += `<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.25rem">`;
+                                    img.vision_description.tags.slice(0, 5).forEach(tag => {
+                                        html += `<span class="tag">${escapeHtml(tag)}</span>`;
+                                    });
+                                    html += `</div>`;
+                                }
+                                
+                                if (img.vision_description.category) {
+                                    html += `<p style="font-size:0.75rem;margin-top:0.25rem;color:var(--text-secondary)">Category: ${escapeHtml(img.vision_description.category)}</p>`;
+                                }
+                                html += `</div>`;
+                            }
+                            
+                            html += `</div>`;  // media-info
+                            html += `</div>`;  // media-item
+                        });
+                        html += `</div>`;  // media-grid
+                    }
+                    
+                    html += `</div>`;  // document-item
+                });
+            }
+            
+            html += `</div>`;  // data-section-card
+        });
+        
+        $('pdf-docs-content').innerHTML = html;
+        
+    } catch (err) {
+        console.error('Failed to load PDF-wise data:', err);
+        $('pdf-docs-content').innerHTML = `<p style="color:var(--color-error)">Failed to load PDF data: ${escapeHtml(err.message)}</p>`;
+    }
+}
+
+function renderDocuments(data) {
+    const docs = data.parsed_documents || [];
+    if (docs.length === 0) {
+        $('documents-content').innerHTML = '<p style="color:var(--text-secondary)">No documents found</p>';
+        return;
+    }
+
+    let html = '';
+    docs.forEach((doc, idx) => {
+        const fileName = doc.source_file.split('/').pop() || doc.source_file;
+        html += `<div class="document-item">`;
+        html += `<div class="document-header">`;
+        html += `<span class="document-name">📄 ${fileName}</span>`;
+        html += `<span class="document-meta">${doc.file_type} • ${doc.total_pages} pages</span>`;
+        html += `</div>`;
+        html += `<div class="document-meta" style="margin-bottom:0.75rem">Size: ${formatSize(doc.metadata?.file_size || 0)}</div>`;
+        html += `<details>`;
+        html += `<summary style="cursor:pointer;color:var(--accent-primary);margin-bottom:0.5rem">View Extracted Text</summary>`;
+        html += `<div class="document-text">${escapeHtml(doc.full_text || 'No text extracted')}</div>`;
+        html += `</details>`;
+        html += `</div>`;
+    });
+
+    $('documents-content').innerHTML = html;
+}
+
+function renderTables(data) {
+    const tables = data.extracted_tables || [];
+    if (tables.length === 0) {
+        $('tables-content').innerHTML = '<p style="color:var(--text-secondary)">No tables extracted</p>';
+        return;
+    }
+
+    let html = '';
+    tables.forEach((table, idx) => {
+        const typeClass = `table-type-${table.table_type?.toLowerCase() || 'general'}`;
+        html += `<div class="table-item">`;
+        html += `<div class="table-header">`;
+        html += `<span><strong>Table ${idx + 1}</strong> - ${table.source_doc?.split('/').pop()}</span>`;
+        html += `<span class="table-type-badge ${typeClass}">${table.table_type || 'UNKNOWN'}</span>`;
+        html += `</div>`;
+        html += `<div style="margin-bottom:0.75rem;font-size:0.875rem;color:var(--text-secondary)">Page ${table.source_page} • ${table.rows?.length || 0} rows • Confidence: ${Math.round((table.confidence || 0) * 100)}%</div>`;
+
+        if (table.headers && table.headers.length > 0) {
+            html += `<table class="data-table">`;
+            html += `<thead><tr>`;
+            table.headers.forEach(h => html += `<th>${escapeHtml(h)}</th>`);
+            html += `</tr></thead>`;
+            html += `<tbody>`;
+            (table.rows || []).forEach((row, ri) => {
+                html += `<tr>`;
+                row.forEach(cell => html += `<td>${escapeHtml(cell || '')}</td>`);
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+        }
+
+        html += `</div>`;
+    });
+
+    $('tables-content').innerHTML = html;
+}
+
+function renderMedia(data) {
+    // Media collection
+    const mc = data.media_collection;
+    if (mc && mc.images && mc.images.length > 0) {
+        let html = `<div class="media-grid">`;
+        mc.images.forEach((img, idx) => {
+            const filePath = img.file_path || '';
+            const fileName = filePath.split('/').pop() || `Image ${idx + 1}`;
+            const fileUrl = filePath.startsWith('http') ? filePath : `/${filePath}`;
+
+            html += `<div class="media-item">`;
+            if (filePath && filePath !== '') {
+                html += `<img src="${fileUrl}" alt="${fileName}" class="media-preview" onerror="this.style.display='none'" />`;
+            }
+            html += `<div class="media-info">`;
+            html += `<h4>${escapeHtml(fileName)}</h4>`;
+            html += `<p>Size: ${formatSize(img.file_size || 0)}</p>`;
+            html += `<p>Method: ${img.extraction_method || 'unknown'}</p>`;
+            html += `</div>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+        $('media-content').innerHTML = html;
+    } else {
+        $('media-content').innerHTML = '<p style="color:var(--text-secondary)">No media extracted</p>';
+    }
+
+    // Image analyses
+    const analyses = data.image_analyses || [];
+    if (analyses.length > 0) {
+        let html = `<div class="media-grid">`;
+        analyses.forEach((analysis, idx) => {
+            html += `<div class="media-item">`;
+            html += `<div class="media-info">`;
+            html += `<h4>Image ${idx + 1}</h4>`;
+            html += `<p><strong>Category:</strong> ${analysis.category || 'unknown'}</p>`;
+            html += `<p><strong>Description:</strong> ${escapeHtml(analysis.description || 'No description')}</p>`;
+            if (analysis.tags && analysis.tags.length > 0) {
+                html += `<div style="margin-top:0.5rem">`;
+                analysis.tags.forEach(tag => html += `<span class="tag">${escapeHtml(tag)}</span>`);
+                html += `</div>`;
+            }
+            html += `<p style="margin-top:0.5rem"><strong>Product:</strong> ${analysis.is_product ? 'Yes' : 'No'} • <strong>Service:</strong> ${analysis.is_service_related ? 'Yes' : 'No'}</p>`;
+            html += `<p><strong>Confidence:</strong> ${Math.round((analysis.confidence || 0) * 100)}%</p>`;
+            html += `</div>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+        $('image-analysis-content').innerHTML = html;
+    } else {
+        $('image-analysis-content').innerHTML = '<p style="color:var(--text-secondary)">No image analyses available</p>';
+    }
+}
+
+function renderProfileView(data) {
+    const profile = data.business_profile;
+    if (!profile) {
+        $('profile-view-content').innerHTML = '<p style="color:var(--text-secondary)">No business profile generated</p>';
+        return;
+    }
+
+    const info = profile.business_info || {};
+    let html = '';
+
+    // Business header
+    html += `<div class="data-section-card">`;
+    html += `<h3>🏢 Business Information</h3>`;
+    html += `<div style="display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))">`;
+
+    if (info.name) html += `<div><strong>Name:</strong> ${escapeHtml(info.name)}</div>`;
+    if (info.description) html += `<div><strong>Description:</strong> ${escapeHtml(info.description)}</div>`;
+    if (info.category) html += `<div><strong>Category:</strong> ${escapeHtml(info.category)}</div>`;
+
+    if (info.contact) {
+        if (info.contact.phone) html += `<div><strong>Phone:</strong> ${escapeHtml(info.contact.phone)}</div>`;
+        if (info.contact.email) html += `<div><strong>Email:</strong> ${escapeHtml(info.contact.email)}</div>`;
+        if (info.contact.website) html += `<div><strong>Website:</strong> ${escapeHtml(info.contact.website)}</div>`;
+    }
+
+    if (info.location) {
+        const loc = info.location;
+        const addr = [loc.address, loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+        if (addr) html += `<div><strong>Location:</strong> ${escapeHtml(addr)}</div>`;
+    }
+
+    html += `</div></div>`;
+
+    // Products
+    if (profile.products && profile.products.length > 0) {
+        html += `<div class="data-section-card">`;
+        html += `<h3>🛍️ Products (${profile.products.length})</h3>`;
+        profile.products.forEach((p, idx) => {
+            html += `<div class="document-item">`;
+            html += `<strong>${escapeHtml(p.name || 'Unnamed Product')}</strong>`;
+            if (p.pricing?.base_price) html += ` - ${p.pricing.currency || 'INR'} ${p.pricing.base_price.toLocaleString()}`;
+            if (p.description) html += `<p style="margin-top:0.5rem;color:var(--text-secondary)">${escapeHtml(p.description)}</p>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Services
+    if (profile.services && profile.services.length > 0) {
+        html += `<div class="data-section-card">`;
+        html += `<h3>🎯 Services (${profile.services.length})</h3>`;
+        profile.services.forEach((p, idx) => {
+            html += `<div class="document-item">`;
+            html += `<strong>${escapeHtml(p.name || 'Unnamed Service')}</strong>`;
+            if (p.pricing?.base_price) html += ` - ${p.pricing.currency || 'INR'} ${p.pricing.base_price.toLocaleString()}`;
+            if (p.description) html += `<p style="margin-top:0.5rem;color:var(--text-secondary)">${escapeHtml(p.description)}</p>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+    }
+
+    $('profile-view-content').innerHTML = html;
+}
+
+function renderValidation(data) {
+    const validation = data.validation;
+    if (!validation) {
+        $('validation-content').innerHTML = '<p style="color:var(--text-secondary)">No validation data available</p>';
+        return;
+    }
+
+    let html = `<div class="validation-summary">`;
+    html += `<div class="validation-item ${validation.is_valid ? 'success' : 'error'}">`;
+    html += `<div class="validation-label">Status</div>`;
+    html += `<div class="validation-count">${validation.is_valid ? 'Valid ✓' : 'Invalid ✗'}</div>`;
+    html += `</div>`;
+
+    html += `<div class="validation-item success">`;
+    html += `<div class="validation-label">Completeness</div>`;
+    html += `<div class="validation-count">${Math.round((validation.completeness_score || 0) * 100)}%</div>`;
+    html += `</div>`;
+
+    html += `<div class="validation-item warning">`;
+    html += `<div class="validation-label">Warnings</div>`;
+    html += `<div class="validation-count">${validation.warnings?.length || 0}</div>`;
+    html += `</div>`;
+
+    html += `<div class="validation-item error">`;
+    html += `<div class="validation-label">Errors</div>`;
+    html += `<div class="validation-count">${validation.errors?.length || 0}</div>`;
+    html += `</div>`;
+    html += `</div>`;
+
+    // Field scores
+    if (validation.field_scores) {
+        html += `<h4 style="margin:1.5rem 0 1rem">Field Scores</h4>`;
+        html += `<div class="overview-grid">`;
+        Object.entries(validation.field_scores).forEach(([key, score]) => {
+            html += `<div class="stat-card">`;
+            html += `<div class="stat-value" style="font-size:1.5rem">${Math.round((score.score || 0) * 100)}%</div>`;
+            html += `<div class="stat-label">${key.replace('_', ' ').toUpperCase()}</div>`;
+            html += `<div style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.25rem">${score.populated_fields}/${score.total_fields} fields</div>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Errors
+    if (validation.errors && validation.errors.length > 0) {
+        html += `<h4 style="margin:1.5rem 0 1rem">Errors</h4>`;
+        html += `<div class="error-list">`;
+        validation.errors.forEach(err => {
+            html += `<div class="error-item"><strong>${err.field}:</strong> ${escapeHtml(err.message)}</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Warnings
+    if (validation.warnings && validation.warnings.length > 0) {
+        html += `<h4 style="margin:1.5rem 0 1rem">Warnings</h4>`;
+        html += `<div class="warning-list">`;
+        validation.warnings.forEach(warn => {
+            html += `<div class="warning-item"><strong>${warn.field}:</strong> ${escapeHtml(warn.message)}</div>`;
+        });
+        html += `</div>`;
+    }
+
+    $('validation-content').innerHTML = html;
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }

@@ -3,10 +3,13 @@ Module: media_extraction.py
 Purpose: Media Extraction Agent — extracts images from documents and organizes media.
 
 Handles:
-    - Embedded image extraction from PDFs (using pdfplumber)
+    - Embedded image extraction from PDFs (using pdfplumber + PyMuPDF)
+    - YOLO-based object detection on extracted images
+    - Qwen vision analysis for image descriptions
     - Embedded image extraction from DOCX (from ZIP internals)
     - Standalone image/video file organization
     - Image deduplication using hashing
+    - PDF-wise organization with page-level metadata
 """
 
 import hashlib
@@ -27,6 +30,7 @@ from backend.models.schemas import (
 from backend.utils.file_classifier import is_image, is_video
 from backend.utils.logger import get_logger
 from backend.utils.storage_manager import storage_manager
+from backend.utils.pdf_image_extractor import pdf_image_extractor
 
 logger = get_logger(__name__)
 
@@ -69,19 +73,37 @@ class MediaExtractionAgent:
 
         all_images: List[ExtractedImage] = []
         seen_hashes: Set[str] = set()
+        pdf_images_by_doc: Dict[str, List[Dict]] = {}  # PDF-wise organization
 
         media_dir = self.storage.get_job_subdir(job_id, "media")
 
-        # Step 1: Extract embedded images from documents
+        # Step 1: Extract images from PDFs using YOLO + Vision
         for doc in parsed_docs:
-            embedded = self._extract_embedded_images(doc, media_dir)
-            for img in embedded:
-                if img.image_hash and img.image_hash in seen_hashes:
-                    logger.debug(f"Skipping duplicate: {img.file_path}")
-                    continue
-                if img.image_hash:
-                    seen_hashes.add(img.image_hash)
-                all_images.append(img)
+            if doc.file_type == FileType.PDF:
+                pdf_images = self._extract_pdf_images_with_yolo(
+                    doc, media_dir, job_id
+                )
+                pdf_images_by_doc[doc.doc_id] = pdf_images
+                
+                for img_data in pdf_images:
+                    if img_data.get('file_path'):
+                        extracted = self._convert_pdf_image_to_extracted(img_data)
+                        if extracted and (not extracted.image_hash or extracted.image_hash not in seen_hashes):
+                            if extracted.image_hash:
+                                seen_hashes.add(extracted.image_hash)
+                            all_images.append(extracted)
+
+        # Step 2: Extract embedded images from DOCX
+        for doc in parsed_docs:
+            if doc.file_type in (FileType.DOCX, FileType.DOC):
+                embedded = self._extract_embedded_images(doc, media_dir)
+                for img in embedded:
+                    if img.image_hash and img.image_hash in seen_hashes:
+                        logger.debug(f"Skipping duplicate: {img.file_path}")
+                        continue
+                    if img.image_hash:
+                        seen_hashes.add(img.image_hash)
+                    all_images.append(img)
 
         # Step 2: Process standalone image files
         for img_file in image_files:
@@ -108,6 +130,9 @@ class MediaExtractionAgent:
                     1 for img in all_images if not img.is_embedded
                 ),
                 "videos": len(video_docs),
+                "pdf_images_with_yolo": sum(
+                    1 for img in all_images if img.metadata.get('yolo_detections')
+                ),
                 "duplicates_skipped": len(seen_hashes) - len(all_images),
             },
         )
@@ -118,6 +143,71 @@ class MediaExtractionAgent:
         )
 
         return collection
+
+    def _extract_pdf_images_with_yolo(
+        self,
+        doc: ParsedDocument,
+        media_dir: Path,
+        job_id: str,
+    ) -> List[Dict]:
+        """
+        Extract images from PDF using YOLO and Qwen vision.
+        
+        Returns list of dicts with image data, YOLO detections, and vision descriptions.
+        """
+        pdf_path = doc.source_file
+        pdf_name = Path(pdf_path).stem
+        
+        logger.info(f"Extracting images from PDF with YOLO: {pdf_name}")
+        
+        # Create PDF-specific output directory
+        pdf_output_dir = media_dir / f"pdf_{pdf_name}"
+        pdf_output_dir.mkdir(exist_ok=True)
+        
+        # Extract images with YOLO + Vision
+        extracted = pdf_image_extractor.extract_images_from_pdf(
+            pdf_path=pdf_path,
+            output_dir=str(pdf_output_dir),
+            job_id=job_id,
+            run_yolo=True,
+            run_vision=True,
+        )
+        
+        logger.info(f"Extracted {len(extracted)} images from PDF {pdf_name}")
+        
+        return extracted
+
+    def _convert_pdf_image_to_extracted(self, img_data: Dict) -> Optional[ExtractedImage]:
+        """Convert PDF image dict to ExtractedImage schema."""
+        try:
+            # Calculate hash if file exists
+            img_hash = None
+            file_path = img_data.get('file_path', '')
+            if file_path and Path(file_path).exists():
+                img_hash = self._hash_file(file_path)
+            
+            return ExtractedImage(
+                image_id=img_data.get('image_id', ''),
+                file_path=file_path,
+                source_doc=img_data.get('source_pdf', ''),
+                source_page=img_data.get('page_number', 1),
+                width=img_data.get('width', 0),
+                height=img_data.get('height', 0),
+                file_size=img_data.get('file_size', 0),
+                mime_type="image/png",
+                extraction_method=img_data.get('extraction_method', 'pymupdf'),
+                is_embedded=True,
+                image_hash=img_hash,
+                metadata={
+                    'yolo_detections': img_data.get('yolo_detections', []),
+                    'vision_description': img_data.get('vision_description', {}),
+                    'pdf_coordinates': img_data.get('pdf_coordinates', {}),
+                    'image_index': img_data.get('image_index', 0),
+                }
+            )
+        except Exception as e:
+            logger.debug(f"Failed to convert PDF image: {e}")
+            return None
 
     def _extract_embedded_images(
         self,

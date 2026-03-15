@@ -217,6 +217,138 @@ async def get_profile(job_id: str):
     return json.loads(profile_data)
 
 
+@app.get("/api/job-data/{job_id}")
+async def get_job_data(job_id: str):
+    """Get all job data including parsed documents, tables, media, and profile."""
+    import json
+    from pathlib import Path
+    
+    index_dir = storage_manager.get_job_subdir(job_id, "index")
+    
+    # Try to load complete job data first
+    complete_data_path = index_dir / "complete_job_data.json"
+    if complete_data_path.exists():
+        data = json.loads(complete_data_path.read_text(encoding="utf-8"))
+        return data
+    
+    # Fallback: load individual files
+    job_data = {"job_id": job_id}
+    
+    # Load file collection
+    file_collection_path = index_dir / "file_collection.json"
+    if file_collection_path.exists():
+        job_data["file_collection"] = json.loads(file_collection_path.read_text(encoding="utf-8"))
+    
+    # Load parsed documents
+    parsed_docs_path = index_dir / "parsed_documents.json"
+    if parsed_docs_path.exists():
+        job_data["parsed_documents"] = json.loads(parsed_docs_path.read_text(encoding="utf-8"))
+    
+    # Load document indexes
+    doc_indexes_path = index_dir / "document_indexes.json"
+    if doc_indexes_path.exists():
+        job_data["document_indexes"] = json.loads(doc_indexes_path.read_text(encoding="utf-8"))
+    
+    # Load extracted tables
+    tables_path = index_dir / "extracted_tables.json"
+    if tables_path.exists():
+        job_data["extracted_tables"] = json.loads(tables_path.read_text(encoding="utf-8"))
+    
+    # Load media collection
+    media_path = index_dir / "media_collection.json"
+    if media_path.exists():
+        job_data["media_collection"] = json.loads(media_path.read_text(encoding="utf-8"))
+    
+    # Load image analyses
+    analyses_path = index_dir / "image_analyses.json"
+    if analyses_path.exists():
+        job_data["image_analyses"] = json.loads(analyses_path.read_text(encoding="utf-8"))
+    
+    # Load validation
+    validation_path = index_dir / "validation.json"
+    if validation_path.exists():
+        job_data["validation"] = json.loads(validation_path.read_text(encoding="utf-8"))
+    
+    # Load profile
+    profile_data = storage_manager.load_profile(job_id)
+    if profile_data:
+        job_data["business_profile"] = json.loads(profile_data)
+    
+    if not job_data:
+        raise HTTPException(status_code=404, detail="No job data found")
+    
+    return job_data
+
+
+@app.get("/api/job-data/{job_id}/parsed-documents")
+async def get_parsed_documents(job_id: str):
+    """Get parsed documents for a job."""
+    import json
+    from pathlib import Path
+    
+    index_dir = storage_manager.get_job_subdir(job_id, "index")
+    parsed_docs_path = index_dir / "parsed_documents.json"
+    
+    if not parsed_docs_path.exists():
+        raise HTTPException(status_code=404, detail="Parsed documents not found")
+    
+    return json.loads(parsed_docs_path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/job-data/{job_id}/tables")
+async def get_tables(job_id: str):
+    """Get extracted tables for a job."""
+    import json
+    from pathlib import Path
+    
+    index_dir = storage_manager.get_job_subdir(job_id, "index")
+    tables_path = index_dir / "extracted_tables.json"
+    
+    if not tables_path.exists():
+        raise HTTPException(status_code=404, detail="Tables not found")
+    
+    return json.loads(tables_path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/job-data/{job_id}/media")
+async def get_media(job_id: str):
+    """Get media collection and image analyses for a job."""
+    import json
+    from pathlib import Path
+    
+    index_dir = storage_manager.get_job_subdir(job_id, "index")
+    
+    media_data = {}
+    
+    media_path = index_dir / "media_collection.json"
+    if media_path.exists():
+        media_data["media_collection"] = json.loads(media_path.read_text(encoding="utf-8"))
+    
+    analyses_path = index_dir / "image_analyses.json"
+    if analyses_path.exists():
+        media_data["image_analyses"] = json.loads(analyses_path.read_text(encoding="utf-8"))
+    
+    if not media_data:
+        raise HTTPException(status_code=404, detail="Media data not found")
+    
+    return media_data
+
+
+@app.get("/api/job-data/{job_id}/pdf-wise")
+async def get_pdf_wise_data(job_id: str):
+    """Get PDF-wise organized data with page-level metadata and YOLO detections."""
+    import json
+    from pathlib import Path
+    
+    index_dir = storage_manager.get_job_subdir(job_id, "index")
+    pdf_wise_path = index_dir / "pdf_wise_data.json"
+    
+    if not pdf_wise_path.exists():
+        raise HTTPException(status_code=404, detail="PDF-wise data not found")
+    
+    return json.loads(pdf_wise_path.read_text(encoding="utf-8"))
+
+
 @app.get("/api/files/{job_id}")
 async def get_files(job_id: str):
     """Get the file collection for a job."""
