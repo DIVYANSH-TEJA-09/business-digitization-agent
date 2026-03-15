@@ -242,7 +242,15 @@ JSON:"""
         )
 
         try:
-            data = json.loads(response)
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            elif cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            data = json.loads(cleaned_response)
         except json.JSONDecodeError:
             logger.warning("Failed to parse business info JSON")
             return BusinessInfo()
@@ -313,7 +321,15 @@ Respond with JSON: {{"products": [...]}}"""
         )
 
         try:
-            data = json.loads(response)
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            elif cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            data = json.loads(cleaned_response)
             products_data = data.get("products", [])
         except json.JSONDecodeError:
             logger.warning("Failed to parse products JSON")
@@ -407,7 +423,15 @@ Respond with JSON: {{"services": [...]}}"""
         )
 
         try:
-            data = json.loads(response)
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            elif cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            data = json.loads(cleaned_response)
             services_data = data.get("services", [])
         except json.JSONDecodeError:
             logger.warning("Failed to parse services JSON")

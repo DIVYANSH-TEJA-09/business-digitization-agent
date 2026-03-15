@@ -276,7 +276,7 @@ Respond with ONLY valid JSON:
                     }
 
                 logger.info(f"[PDFImageExtractor] Vision analysis parsed successfully")
-                return result
+                return data
 
             except json.JSONDecodeError as e:
                 logger.warning(f"[PDFImageExtractor] Failed to parse vision response: {e}")
