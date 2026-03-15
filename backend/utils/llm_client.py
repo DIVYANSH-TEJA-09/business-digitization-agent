@@ -264,22 +264,41 @@ class LLMClient:
                 kwargs: Dict[str, Any] = {
                     "model": model,
                     "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
                 }
+                
+                # Reasoning models (like gpt-oss-120b) require specific parameters
+                if "gpt-oss-120b" in model.lower() or "o1" in model.lower() or "o3" in model.lower():
+                    kwargs["temperature"] = 1
+                    kwargs["top_p"] = 1
+                    kwargs["max_completion_tokens"] = 8192
+                    kwargs["reasoning_effort"] = "medium"
+                    kwargs["stop"] = None
+                    kwargs["stream"] = True
+                else:
+                    kwargs["temperature"] = temperature
+                    kwargs["max_tokens"] = max_tokens
+
                 if response_format:
                     kwargs["response_format"] = response_format
 
                 response = client.chat.completions.create(**kwargs)
                 self._llm_call_count += 1
 
-                content = response.choices[0].message.content
+                if kwargs.get("stream"):
+                    content = ""
+                    tokens = "N/A (stream)"
+                    for chunk in response:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            content += chunk.choices[0].delta.content
+                else:
+                    content = response.choices[0].message.content
+                    tokens = response.usage.total_tokens if hasattr(response, "usage") and response.usage else "N/A"
+
                 if content is None:
                     content = ""
 
                 logger.debug(
-                    f"[{provider}] Response received "
-                    f"(tokens: {response.usage.total_tokens if response.usage else 'N/A'})"
+                    f"[{provider}] Response received (tokens: {tokens})"
                 )
 
                 return content.strip()

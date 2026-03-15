@@ -436,6 +436,24 @@ function toggleJson() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// CONNECTION STATUS
+// ═══════════════════════════════════════════════════════════
+
+function updateConnectionStatus(isConnected) {
+    let indicator = $('connection-status');
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'connection-status';
+        const headerInner = document.querySelector('.header-inner');
+        if (headerInner) headerInner.appendChild(indicator);
+    }
+    indicator.className = `connection-status ${isConnected ? 'connected' : 'disconnected'}`;
+    indicator.innerHTML = isConnected
+        ? '<span class="status-dot"></span> Backend Connected'
+        : '<span class="status-dot"></span> Backend Disconnected';
+}
+
+// ═══════════════════════════════════════════════════════════
 // HEALTH CHECK
 // ═══════════════════════════════════════════════════════════
 
@@ -445,6 +463,7 @@ async function checkHealth() {
         if (!res.ok) throw new Error('Health check failed');
 
         const health = await res.json();
+        updateConnectionStatus(true);
 
         // Ollama
         const ollamaOk = health.ollama?.status === 'ok';
@@ -463,6 +482,7 @@ async function checkHealth() {
         $('status-storage').textContent = `${totalMb.toFixed(1)} MB used`;
 
     } catch (err) {
+        updateConnectionStatus(false);
         $('ind-ollama').className = 'health-indicator error';
         $('ind-groq').className = 'health-indicator error';
         $('ind-storage').className = 'health-indicator error';

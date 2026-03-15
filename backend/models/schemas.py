@@ -200,6 +200,7 @@ class ExtractedImage(BaseModel):
     extraction_method: str = "standalone"  # "embedded" | "standalone"
     is_embedded: bool = False
     image_hash: Optional[str] = None
+    metadata: Dict[str, Any] = {}
 
 
 class ImageAnalysis(BaseModel):

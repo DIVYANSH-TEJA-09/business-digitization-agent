@@ -147,8 +147,8 @@ with st.sidebar:
     st.markdown("---")
     
     # Job Info
-    if st.session_state.current_job_id:
-        st.info(f"**Current Job:** `{st.session_state.current_job_id}`")
+    if st.session_state.get("current_job_id"):
+        st.info(f"**Current Job:** `{st.session_state.get('current_job_id')}`")
         
         if st.button("Clear Current Job"):
             st.session_state.current_job_id = None
@@ -283,12 +283,12 @@ elif page == "🔄 Pipeline View":
     st.title("🔄 Pipeline Visualization")
     st.markdown("Real-time view of the digitization pipeline showing agent inputs, outputs, and data flow.")
     
-    if not st.session_state.current_job_id:
+    if not st.session_state.get("current_job_id"):
         st.warning("⚠️ No active job. Upload a file first.")
         if st.button("Go to Upload →"):
             st.rerun()
     else:
-        job_id = st.session_state.current_job_id
+        job_id = st.session_state.get("current_job_id")
         
         # Refresh button
         col1, col2 = st.columns([1, 4])
@@ -354,8 +354,8 @@ elif page == "🔄 Pipeline View":
                 # Show input/output for current or completed stages
                 if is_completed or is_current:
                     with st.expander(f"  📥 Input → 📤 Output for {name}"):
-                        if st.session_state.job_data:
-                            jd = st.session_state.job_data
+                        if st.session_state.get("job_data"):
+                            jd = st.session_state.get("job_data")
                             if phase_key == "file_discovery" and "file_collection" in jd:
                                 st.json(jd["file_collection"])
                             elif phase_key == "parsing" and "parsed_documents" in jd:
@@ -388,13 +388,13 @@ elif page == "🔄 Pipeline View":
         if status.get("status") == "completed" or progress >= 100:
             st.success("🎉 Pipeline Complete!")
             
-            if not st.session_state.job_data:
+            if not st.session_state.get("job_data"):
                 with st.spinner("Loading job data..."):
                     st.session_state.job_data = get_job_data(job_id)
                     add_log(f"Job data loaded for {job_id}")
             
-            if st.session_state.job_data:
-                jd = st.session_state.job_data
+            if st.session_state.get("job_data"):
+                jd = st.session_state.get("job_data")
                 
                 st.markdown("---")
                 st.subheader("📊 Processing Summary")
@@ -455,17 +455,17 @@ elif page == "🔄 Pipeline View":
 elif page == "📊 Profile Viewer":
     st.title("📊 Business Profile Viewer")
     
-    if not st.session_state.job_data:
-        if st.session_state.current_job_id:
+    if not st.session_state.get("job_data"):
+        if st.session_state.get("current_job_id"):
             with st.spinner("Loading job data..."):
-                st.session_state.job_data = get_job_data(st.session_state.current_job_id)
+                st.session_state.job_data = get_job_data(st.session_state.get("current_job_id"))
         else:
             st.warning("⚠️ No job data available. Process a file first.")
             if st.button("Go to Upload →"):
                 st.rerun()
     
-    if st.session_state.job_data:
-        jd = st.session_state.job_data
+    if st.session_state.get("job_data"):
+        jd = st.session_state.get("job_data")
         profile = jd.get("business_profile", {})
         
         # Tabs for different views
