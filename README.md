@@ -1,3 +1,11 @@
+---
+title: Digi Biz
+emoji: 🏢
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+---
 # Digi-Biz - Agentic Business Digitization
 
 **Transform business documents into beautiful digital profiles using AI**
