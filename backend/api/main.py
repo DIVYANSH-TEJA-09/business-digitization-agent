@@ -13,6 +13,19 @@ from dotenv import load_dotenv
 
 load_dotenv(".env")
 
+# Hugging Face Docker Spaces securely mount secrets as files.
+# We must inject them into the system environment so all agents can read them via os.getenv()
+import os
+secrets_dir = Path("/run/secrets")
+if secrets_dir.exists():
+    for secret_file in secrets_dir.glob("*"):
+        try:
+            with open(secret_file, "r") as f:
+                secret_name = secret_file.name.upper()
+                os.environ[secret_name] = f.read().strip()
+        except Exception as e:
+            print(f"Could not load secret {secret_file.name}: {e}")
+
 # Agents
 from backend.agents.file_discovery import FileDiscoveryAgent, FileDiscoveryInput
 from backend.agents.document_parsing import DocumentParsingAgent, DocumentParsingInput
