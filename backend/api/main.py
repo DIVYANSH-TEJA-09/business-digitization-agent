@@ -92,6 +92,17 @@ async def get_status(job_id: str):
         raise HTTPException(404, "Job not found")
     return job
 
+@app.get("/api/debug")
+async def get_debug():
+    """Temporary debug route to inspect environment keys from Hugging Face"""
+    import os
+    env_keys = list(os.environ.keys())
+    return {
+        "env_keys": env_keys,
+        "groq_present": "GROQ_API_KEY" in os.environ,
+        "is_empty": os.environ.get("GROQ_API_KEY") == ""
+    }
+
 @app.get("/api/profiles")
 async def list_profiles():
     """List all profiles"""
