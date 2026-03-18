@@ -113,7 +113,9 @@ async def get_debug():
     return {
         "env_keys": env_keys,
         "groq_present": "GROQ_API_KEY" in os.environ,
-        "is_empty": os.environ.get("GROQ_API_KEY") == ""
+        "is_empty": os.environ.get("GROQ_API_KEY") == "",
+        "length": len(os.environ.get("GROQ_API_KEY", "")),
+        "val_start": os.environ.get("GROQ_API_KEY", "")[:4]
     }
 
 @app.get("/api/profiles")
