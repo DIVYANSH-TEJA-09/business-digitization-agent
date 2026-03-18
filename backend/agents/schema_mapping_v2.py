@@ -271,7 +271,17 @@ Return ONLY JSON. Use null for missing fields."""
                 text = text[4:]
         
         try:
-            return json.loads(text.strip())
+            result = json.loads(text.strip())
+            # LLM sometimes returns a list instead of a dict
+            if isinstance(result, list):
+                # Grab the first dict from the list, or merge all dicts
+                for item in result:
+                    if isinstance(item, dict):
+                        return item
+                return {}
+            if isinstance(result, dict):
+                return result
+            return {}
         except:
             logger.warning(f"Failed to parse JSON: {text[:200]}")
             return {}
