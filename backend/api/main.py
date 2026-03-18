@@ -11,20 +11,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
-load_dotenv(".env")
+# ─── Environment Loading ───────────────────────────────────────────
+# IMPORTANT: override=False ensures that if HF Spaces already injected
+# the secrets as real env vars, load_dotenv will NOT clobber them.
+load_dotenv(".env", override=False)
 
-# Hugging Face Docker Spaces securely mount secrets as files.
-# We must inject them into the system environment so all agents can read them via os.getenv()
-import os
+# Hugging Face Docker Spaces may also mount secrets as files under /run/secrets/.
+# Read those and inject them – these always take highest priority.
 secrets_dir = Path("/run/secrets")
 if secrets_dir.exists():
-    for secret_file in secrets_dir.glob("*"):
-        try:
-            with open(secret_file, "r") as f:
-                secret_name = secret_file.name.upper()
-                os.environ[secret_name] = f.read().strip()
-        except Exception as e:
-            print(f"Could not load secret {secret_file.name}: {e}")
+    for secret_file in secrets_dir.iterdir():
+        if secret_file.is_file():
+            try:
+                val = secret_file.read_text().strip()
+                if val:  # only override if the file is non-empty
+                    key = secret_file.name.upper()
+                    os.environ[key] = val
+                    print(f"[secrets] Loaded {key} from /run/secrets/ ({len(val)} chars)")
+            except Exception as e:
+                print(f"[secrets] Could not load {secret_file.name}: {e}")
+
+# Final sanity log so we can see in container logs what happened
+_groq = os.environ.get("GROQ_API_KEY", "")
+print(f"[env] GROQ_API_KEY present={bool(_groq)}, length={len(_groq)}")
 
 # Agents
 from backend.agents.file_discovery import FileDiscoveryAgent, FileDiscoveryInput

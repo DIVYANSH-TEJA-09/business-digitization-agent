@@ -31,8 +31,8 @@ logger = get_logger(__name__)
 class SchemaMappingAgent:
     """Extracts ACTUAL data from documents using focused LLM prompts"""
     
-    def __init__(self, groq_model: str = "openai/gpt-oss-120b", timeout: int = 120):
-        self.groq_model = groq_model
+    def __init__(self, groq_model: str = None, timeout: int = 120):
+        self.groq_model = groq_model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
         self.timeout = timeout
         self.client = None
         self._initialize_client()
@@ -40,9 +40,13 @@ class SchemaMappingAgent:
     def _initialize_client(self):
         try:
             from groq import Groq
-            api_key = os.getenv("GROQ_API_KEY")
+            api_key = os.getenv("GROQ_API_KEY", "").strip()
             if not api_key:
-                raise ValueError("GROQ_API_KEY not set")
+                raise ValueError(
+                    f"GROQ_API_KEY not set or empty. "
+                    f"Key in env: {'GROQ_API_KEY' in os.environ}, "
+                    f"Length: {len(os.environ.get('GROQ_API_KEY', ''))}"
+                )
             self.client = Groq(api_key=api_key, timeout=self.timeout)
             logger.info(f"Groq client initialized: {self.groq_model}")
         except Exception as e:
