@@ -1,6 +1,6 @@
-// API configuration
-const RAW_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-const API_BASE_URL = RAW_URL.endsWith('/api') ? RAW_URL : `${RAW_URL}/api`;
+// API configuration for unified single-container deployment
+const isServer = typeof window === 'undefined';
+const API_BASE_URL = isServer ? 'http://localhost:8000/api' : '/api';
 
 // ─────────────────────────────────────────────────────
 // Generic interfaces – the profile page renders ANY
