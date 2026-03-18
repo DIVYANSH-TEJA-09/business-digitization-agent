@@ -1,0 +1,34 @@
+services:
+  # ─── BACKEND API (FastAPI) ───
+  - type: web
+    name: digi-biz-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.7"
+      # This will automatically be passed the frontend's URL once deployed
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: digi-biz-frontend
+          envVarKey: RENDER_EXTERNAL_URL
+
+  # ─── FRONTEND (Next.js) ───
+  - type: web
+    name: digi-biz-frontend
+    runtime: node
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm start
+    envVars:
+      # Automatically wire the frontend to point to the backend API we just created
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: digi-biz-api
+          envVarKey: RENDER_EXTERNAL_URL
+        # We append /api to the URL
+        property: url

@@ -1,41 +1,33 @@
-# Core Framework
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-dotenv==1.0.1
-pydantic==2.10.4
-pydantic-settings==2.7.1
+# ─── Core API ───
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
 
-# Document Parsing
-pdfplumber==0.11.4
-PyPDF2==3.0.1
-python-docx==1.1.2
-openpyxl==3.1.5
-pandas==2.2.3
-PyMuPDF==1.24.0  # For high-quality PDF image extraction
+# ─── Document Parsing ───
+pdfplumber>=0.10.0
+PyPDF2>=3.0.0
+python-docx>=1.0.0
+openpyxl>=3.1.0
+pandas>=2.0.0
 
-# Image Processing
-Pillow==11.1.0
-ultralytics==8.3.47  # YOLO for object detection in PDF images
+# ─── Image Processing ───
+Pillow>=10.0.0
+imagehash>=4.3.0
 
-# LLM Integration (Groq + Ollama - both OpenAI-compatible)
-openai==1.58.1
-httpx==0.28.1
+# ─── File Handling ───
+chardet>=5.2.0
 
-# File Handling
-python-magic==0.4.27; sys_platform != "win32"
-python-magic-bin==0.4.14; sys_platform == "win32"
-aiofiles==24.1.0
+# ─── LLM Integration ───
+groq>=0.4.0
+openai>=1.12.0
+ollama>=0.1.0
 
-# Utilities
-uuid6==2024.7.10
+# ─── Data Validation ───
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
 
-# Testing
-pytest==8.3.4
-pytest-asyncio==0.25.0
-pytest-cov==6.0.0
+# ─── Async & Utilities ───
+aiofiles>=23.2.0
+python-dotenv>=1.0.0
 
-# Streamlit UI
-streamlit==1.31.0
-
-# PageIndex (will be installed from git)
-# pip install git+https://github.com/VectifyAI/PageIndex.git
+# ─── Logging ───
+structlog>=23.2.0

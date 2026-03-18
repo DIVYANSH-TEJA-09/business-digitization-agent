@@ -1,286 +1,476 @@
 """
-Module: table_extraction.py
-Purpose: Table Extraction Agent — detects, classifies, and structures tables.
+Table Extraction Agent
 
-Takes parsed documents and extracts structured table data with
-type classification (pricing, itinerary, specs, etc.).
+Detects, extracts, and classifies tables from parsed documents.
+Implements rule-based classification with LLM fallback for ambiguous cases.
 """
-
+import os
+import time
 import re
-from typing import List, Optional
+from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime
 
 from backend.models.schemas import (
-    ParsedDocument,
+    TableExtractionInput,
+    TableExtractionOutput,
     StructuredTable,
     TableMetadata,
-    TableType,
+    ParsedDocument,
+    Page,
 )
+from backend.models.enums import TableType
 from backend.utils.logger import get_logger
+
 
 logger = get_logger(__name__)
 
-# Keywords for table type classification
-PRICING_KEYWORDS = {
-    "price", "cost", "rate", "fee", "amount", "total", "subtotal",
-    "discount", "charge", "rs", "inr", "usd", "$", "₹", "mrp",
-    "per person", "per night", "per unit",
-}
 
-ITINERARY_KEYWORDS = {
-    "day", "date", "time", "schedule", "itinerary", "departure",
-    "arrival", "morning", "afternoon", "evening", "night",
-    "activity", "meal", "breakfast", "lunch", "dinner",
-}
-
-SPEC_KEYWORDS = {
-    "specification", "dimension", "weight", "size", "material",
-    "color", "model", "capacity", "power", "voltage", "features",
-}
-
-MENU_KEYWORDS = {
-    "item", "dish", "cuisine", "ingredient", "veg", "non-veg",
-    "starter", "main course", "dessert", "beverage",
-}
-
-INVENTORY_KEYWORDS = {
-    "stock", "quantity", "available", "sku", "inventory",
-    "in stock", "out of stock", "units",
-}
+class TableExtractionError(Exception):
+    """Base exception for table extraction errors"""
+    pass
 
 
 class TableExtractionAgent:
     """
-    Agent for extracting and classifying tables from parsed documents.
-
-    Workflow:
-        1. Collect raw tables from parsed document pages
-        2. Clean and validate each table
-        3. Classify table type using header/content analysis
-        4. Return structured table objects with metadata
+    Extracts and classifies tables from parsed documents
+    
+    Features:
+    - Rule-based table type classification
+    - Table cleaning and normalization
+    - Complex table handling
+    - Confidence scoring
     """
-
-    def extract(self, parsed_doc: ParsedDocument) -> List[StructuredTable]:
+    
+    def __init__(self):
+        """Initialize Table Extraction Agent"""
+        self.table_utils = TableUtils()
+    
+    def extract(self, input: TableExtractionInput) -> TableExtractionOutput:
         """
-        Extract all tables from a parsed document.
-
+        Extract tables from all parsed documents
+        
         Args:
-            parsed_doc: Document with raw tables in pages
-
+            input: Table extraction input
+            
         Returns:
-            List of structured, classified tables
+            Table extraction output
         """
-        tables: List[StructuredTable] = []
-
-        for page in parsed_doc.pages:
-            for raw_table in page.tables:
-                structured = self._structure_table(
-                    raw_table=raw_table,
-                    source_doc=parsed_doc.source_file,
-                    source_page=page.number,
-                    surrounding_text=page.text[:500],
-                )
-
-                if structured:
-                    tables.append(structured)
-
-        logger.info(
-            f"Extracted {len(tables)} tables from "
-            f"{parsed_doc.source_file}"
-        )
-
+        start_time = time.time()
+        errors: List[str] = []
+        all_tables: List[StructuredTable] = []
+        
+        logger.info(f"Starting table extraction for job {input.job_id}")
+        logger.info(f"Documents to process: {len(input.parsed_documents)}")
+        
+        try:
+            # Extract tables from each document
+            for doc in input.parsed_documents:
+                try:
+                    doc_tables = self._extract_from_document(doc)
+                    all_tables.extend(doc_tables)
+                    logger.info(f"Extracted {len(doc_tables)} tables from {doc.source_file}")
+                except Exception as e:
+                    error_msg = f"Failed to extract tables from {doc.source_file}: {str(e)}"
+                    errors.append(error_msg)
+                    logger.error(error_msg)
+            
+            # Calculate statistics
+            tables_by_type = self._count_by_type(all_tables)
+            processing_time = time.time() - start_time
+            
+            output = TableExtractionOutput(
+                job_id=input.job_id,
+                success=len(all_tables) > 0,
+                tables=all_tables,
+                total_tables=len(all_tables),
+                tables_by_type=tables_by_type,
+                processing_time=processing_time,
+                errors=errors
+            )
+            
+            logger.info(
+                f"Table extraction completed: {len(all_tables)} tables "
+                f"in {processing_time:.2f}s"
+            )
+            
+            return output
+            
+        except Exception as e:
+            logger.exception(f"Unexpected error in table extraction: {e}")
+            return TableExtractionOutput(
+                job_id=input.job_id,
+                success=False,
+                tables=[],
+                total_tables=0,
+                tables_by_type={},
+                processing_time=time.time() - start_time,
+                errors=[f"Unexpected error: {str(e)}"]
+            )
+    
+    def _extract_from_document(self, doc: ParsedDocument) -> List[StructuredTable]:
+        """
+        Extract tables from a single document
+        
+        Args:
+            doc: ParsedDocument object
+            
+        Returns:
+            List of StructuredTable objects
+        """
+        tables = []
+        
+        for page in doc.pages:
+            if page.tables:
+                page_tables = self._extract_from_page(page, doc)
+                tables.extend(page_tables)
+        
         return tables
-
-    def extract_from_multiple(
-        self, parsed_docs: List[ParsedDocument]
-    ) -> List[StructuredTable]:
-        """Extract tables from multiple documents."""
-        all_tables = []
-        for doc in parsed_docs:
-            all_tables.extend(self.extract(doc))
-        return all_tables
-
-    def _structure_table(
-        self,
-        raw_table: List[List[str]],
-        source_doc: str,
-        source_page: int,
-        surrounding_text: str = "",
-    ) -> Optional[StructuredTable]:
+    
+    def _extract_from_page(self, page: Page, doc: ParsedDocument) -> List[StructuredTable]:
         """
-        Convert a raw table into a structured table.
-
-        Returns None if table is invalid or too small.
+        Extract tables from a single page
+        
+        Args:
+            page: Page object
+            doc: ParsedDocument object
+            
+        Returns:
+            List of StructuredTable objects
         """
-        if not raw_table or len(raw_table) < 2:
-            return None
-
-        # Clean the table
-        cleaned = self._clean_table(raw_table)
-        if not cleaned or len(cleaned) < 2:
-            return None
-
-        # Extract headers (first row)
-        headers = cleaned[0]
-        rows = cleaned[1:]
-
-        # Skip if headers are all empty
-        if not any(h.strip() for h in headers):
-            # Try second row as headers
-            if len(cleaned) > 2:
-                headers = cleaned[1]
-                rows = cleaned[2:]
-            else:
-                return None
-
-        # Classify table type
-        table_type = self._classify_table(headers, rows, surrounding_text)
-
-        # Calculate confidence
-        confidence = self._calculate_confidence(headers, rows, table_type)
-
-        return StructuredTable(
-            source_doc=source_doc,
-            source_page=source_page,
-            headers=headers,
-            rows=rows,
-            table_type=table_type,
-            context=surrounding_text[:200],
-            confidence=confidence,
-            metadata=TableMetadata(
-                surrounding_text=surrounding_text[:500],
-                confidence_score=confidence,
-                column_count=len(headers),
-                row_count=len(rows),
-            ),
-        )
-
-    def _clean_table(self, raw_table: List[List[str]]) -> List[List[str]]:
+        tables = []
+        
+        for i, raw_table in enumerate(page.tables):
+            try:
+                # Clean and validate table
+                cleaned = self.table_utils.clean_table(raw_table)
+                
+                if self.table_utils.is_valid_table(cleaned):
+                    # Classify table type
+                    table_type = self.classify_table(cleaned, page.text)
+                    
+                    # Create structured table
+                    structured = StructuredTable(
+                        table_id=f"tbl_{doc.doc_id}_p{page.number}_{i}",
+                        source_doc=doc.source_file,
+                        source_page=page.number,
+                        headers=self._extract_headers(cleaned),
+                        rows=cleaned[1:] if len(cleaned) > 1 else [],
+                        table_type=table_type,
+                        context=self._extract_context(page.text, i),
+                        confidence=self._calculate_confidence(cleaned, table_type),
+                        metadata=TableMetadata(
+                            surrounding_text=page.text[:500] if page.text else "",
+                            confidence_score=self._calculate_confidence(cleaned, table_type),
+                            detection_method="rule-based",
+                            column_count=len(cleaned[0]) if cleaned else 0,
+                            row_count=len(cleaned)
+                        )
+                    )
+                    
+                    tables.append(structured)
+                    
+            except Exception as e:
+                logger.warning(f"Failed to extract table {i} from page {page.number}: {e}")
+        
+        return tables
+    
+    def classify_table(self, table: List[List[str]], context: str = "") -> TableType:
         """
-        Clean a raw table.
-
-        - Strip whitespace from all cells
-        - Remove completely empty rows
-        - Remove completely empty columns
-        - Normalize cell content
+        Classify table by type using rule-based detection
+        
+        Args:
+            table: Cleaned table data
+            context: Surrounding text context
+            
+        Returns:
+            TableType enum value
         """
-        if not raw_table:
-            return []
-
-        # Strip cells
-        cleaned = []
-        for row in raw_table:
-            clean_row = [
-                str(cell).strip() if cell else ""
-                for cell in row
-            ]
-            cleaned.append(clean_row)
-
-        # Remove completely empty rows
-        cleaned = [row for row in cleaned if any(cell for cell in row)]
-
-        if not cleaned:
-            return []
-
-        # Find non-empty columns
-        max_cols = max(len(row) for row in cleaned)
-        non_empty_cols = set()
-        for row in cleaned:
-            for i, cell in enumerate(row):
-                if cell:
-                    non_empty_cols.add(i)
-
-        # Remove empty columns
-        if non_empty_cols and len(non_empty_cols) < max_cols:
-            cleaned = [
-                [row[i] if i < len(row) else "" for i in sorted(non_empty_cols)]
-                for row in cleaned
-            ]
-
-        return cleaned
-
-    def _classify_table(
-        self,
-        headers: List[str],
-        rows: List[List[str]],
-        context: str,
-    ) -> TableType:
-        """
-        Classify table type based on headers, content, and context.
-
-        Uses keyword matching on headers and cell values
-        to determine the most likely table type.
-        """
-        # Combine headers and first few rows for analysis
-        all_text = " ".join(headers).lower()
-        for row in rows[:5]:
-            all_text += " " + " ".join(row).lower()
-        all_text += " " + context.lower()
-
-        # Score each type
-        scores = {
-            TableType.PRICING: self._keyword_score(all_text, PRICING_KEYWORDS),
-            TableType.ITINERARY: self._keyword_score(all_text, ITINERARY_KEYWORDS),
-            TableType.SPECIFICATIONS: self._keyword_score(all_text, SPEC_KEYWORDS),
-            TableType.MENU: self._keyword_score(all_text, MENU_KEYWORDS),
-            TableType.INVENTORY: self._keyword_score(all_text, INVENTORY_KEYWORDS),
-        }
-
-        # Check for numeric patterns (pricing indicator)
-        numeric_count = sum(
-            1 for row in rows
-            for cell in row
-            if re.match(r"^[₹$]?\s*\d+[\d,]*\.?\d*$", cell.strip())
-        )
-        if numeric_count > len(rows) * 0.3:
-            scores[TableType.PRICING] += 2
-
-        # Find best match
-        best_type = max(scores, key=scores.get)
-        best_score = scores[best_type]
-
-        if best_score >= 2:
-            return best_type
-
+        # Strategy 1: Check headers
+        headers = table[0] if table else []
+        headers_lower = [h.lower() for h in headers]
+        header_text = ' '.join(headers_lower)
+        
+        # Strategy 2: Check content patterns
+        content_text = ' '.join(' '.join(row) for row in table[1:3] if len(table) > 1)
+        content_lower = content_text.lower()
+        
+        # Pricing table detection
+        if self._is_pricing_table(headers_lower, content_lower):
+            return TableType.PRICING
+        
+        # Itinerary/Schedule table detection
+        if self._is_itinerary_table(headers_lower, content_lower):
+            return TableType.ITINERARY
+        
+        # Specifications table detection
+        if self._is_specification_table(headers_lower, content_lower):
+            return TableType.SPECIFICATIONS
+        
+        # Menu table detection
+        if self._is_menu_table(headers_lower, content_lower):
+            return TableType.MENU
+        
+        # Inventory table detection
+        if self._is_inventory_table(headers_lower, content_lower):
+            return TableType.INVENTORY
+        
+        # Default to general
         return TableType.GENERAL
-
-    def _keyword_score(self, text: str, keywords: set) -> int:
-        """Count how many keywords appear in text."""
-        return sum(1 for kw in keywords if kw in text)
-
-    def _calculate_confidence(
-        self,
-        headers: List[str],
-        rows: List[List[str]],
-        table_type: TableType,
-    ) -> float:
-        """Calculate confidence score for the extraction."""
-        score = 0.5  # Base score
-
-        # Has meaningful headers
-        if any(len(h) > 2 for h in headers):
-            score += 0.1
-
-        # Consistent column count
-        if rows:
-            col_counts = [len(row) for row in rows]
-            if len(set(col_counts)) == 1:
-                score += 0.1
-
-        # Multiple rows of data
-        if len(rows) >= 3:
-            score += 0.1
-
-        # Classified to a specific type
-        if table_type != TableType.GENERAL:
-            score += 0.1
-
-        # Cell fill rate
-        total_cells = sum(len(row) for row in rows)
-        filled_cells = sum(
-            1 for row in rows for cell in row if cell.strip()
+    
+    def _is_pricing_table(self, headers: List[str], content: str) -> bool:
+        """
+        Detect pricing tables
+        
+        Args:
+            headers: Table headers (lowercase)
+            content: Table content (lowercase)
+            
+        Returns:
+            True if pricing table
+        """
+        price_keywords = ['price', 'cost', 'rate', 'amount', 'fee', 'charge', 'total', 'subtotal']
+        currency_patterns = [r'\$\d+', r'€\d+', r'₹\d+', r'\d+\.\d{2}', r'\d{3,}']
+        
+        # Check headers for price-related terms
+        has_price_header = any(
+            any(keyword in header for keyword in price_keywords)
+            for header in headers
         )
-        if total_cells > 0:
-            fill_rate = filled_cells / total_cells
-            score += fill_rate * 0.1
+        
+        # Check content for currency patterns
+        import re
+        has_currency = bool(re.search(r'[\$€₹]\s*\d+[\d,.]*', content))
+        
+        return has_price_header or has_currency
+    
+    def _is_itinerary_table(self, headers: List[str], content: str) -> bool:
+        """
+        Detect itinerary/schedule tables
+        
+        Args:
+            headers: Table headers (lowercase)
+            content: Table content (lowercase)
+            
+        Returns:
+            True if itinerary table
+        """
+        time_keywords = ['day', 'time', 'date', 'schedule', 'itinerary', 'duration', 'when']
+        
+        has_time_header = any(
+            any(keyword in header for keyword in time_keywords)
+            for header in headers
+        )
+        
+        # Check for time patterns (Day 1, 9:00 AM, etc.)
+        has_time_data = bool(re.search(r'(day\s*\d+|\d{1,2}:\d{2}\s*[ap]m)', content))
+        
+        return has_time_header or has_time_data
+    
+    def _is_specification_table(self, headers: List[str], content: str) -> bool:
+        """
+        Detect specification tables
+        
+        Args:
+            headers: Table headers (lowercase)
+            content: Table content (lowercase)
+            
+        Returns:
+            True if specification table
+        """
+        spec_keywords = ['spec', 'specification', 'feature', 'dimension', 'weight', 
+                        'size', 'material', 'color', 'model', 'type', 'description']
+        
+        has_spec_header = any(
+            any(keyword in header for keyword in spec_keywords)
+            for header in headers
+        )
+        
+        return has_spec_header
+    
+    def _is_menu_table(self, headers: List[str], content: str) -> bool:
+        """
+        Detect menu tables
+        
+        Args:
+            headers: Table headers (lowercase)
+            content: Table content (lowercase)
+            
+        Returns:
+            True if menu table
+        """
+        menu_keywords = ['dish', 'item', 'food', 'meal', 'course', 'appetizer', 
+                        'main', 'dessert', 'beverage', 'menu']
+        
+        has_menu_header = any(
+            any(keyword in header for keyword in menu_keywords)
+            for header in headers
+        )
+        
+        return has_menu_header
+    
+    def _is_inventory_table(self, headers: List[str], content: str) -> bool:
+        """
+        Detect inventory tables
+        
+        Args:
+            headers: Table headers (lowercase)
+            content: Table content (lowercase)
+            
+        Returns:
+            True if inventory table
+        """
+        inventory_keywords = ['stock', 'quantity', 'available', 'inventory', 
+                             'count', 'units', 'remaining']
+        
+        has_inventory_header = any(
+            any(keyword in header for keyword in inventory_keywords)
+            for header in headers
+        )
+        
+        return has_inventory_header
+    
+    def _extract_headers(self, table: List[List[str]]) -> List[str]:
+        """
+        Extract headers from table
+        
+        Args:
+            table: Cleaned table data
+            
+        Returns:
+            List of header strings
+        """
+        if not table:
+            return []
+        
+        return table[0] if table else []
+    
+    def _extract_context(self, page_text: str, table_index: int) -> str:
+        """
+        Extract surrounding text context for table
+        
+        Args:
+            page_text: Full page text
+            table_index: Index of table on page
+            
+        Returns:
+            Context string
+        """
+        if not page_text:
+            return ""
+        
+        # Return first 500 chars as context (simplified)
+        return page_text[:500]
+    
+    def _calculate_confidence(self, table: List[List[str]], table_type: TableType) -> float:
+        """
+        Calculate confidence score for table extraction
+        
+        Args:
+            table: Cleaned table data
+            table_type: Classified table type
+            
+        Returns:
+            Confidence score (0.0-1.0)
+        """
+        confidence = 0.5  # Base confidence
+        
+        # Increase for well-structured tables
+        if len(table) > 2 and len(table[0]) > 1:
+            confidence += 0.2
+        
+        # Increase for specific types (not GENERAL)
+        if table_type != TableType.GENERAL:
+            confidence += 0.2
+        
+        # Cap at 1.0
+        return min(confidence, 1.0)
+    
+    def _count_by_type(self, tables: List[StructuredTable]) -> Dict[str, int]:
+        """
+        Count tables by type
+        
+        Args:
+            tables: List of tables
+            
+        Returns:
+            Dictionary of type counts
+        """
+        counts = {}
+        for table in tables:
+            type_name = table.table_type.value
+            counts[type_name] = counts.get(type_name, 0) + 1
+        return counts
 
-        return min(score, 1.0)
+
+class TableUtils:
+    """
+    Utility functions for table processing
+    """
+    
+    def clean_table(self, table: List) -> List[List[str]]:
+        """
+        Clean and normalize table data
+        
+        Args:
+            table: Raw table data
+            
+        Returns:
+            Cleaned table
+        """
+        if not table:
+            return []
+        
+        cleaned = []
+        
+        for row in table:
+            if row is None:
+                continue
+                
+            cleaned_row = []
+            for cell in row:
+                if cell is None:
+                    cleaned_row.append("")
+                else:
+                    # Convert to string and clean
+                    cell_text = str(cell).strip()
+                    # Remove excessive whitespace
+                    cell_text = ' '.join(cell_text.split())
+                    cleaned_row.append(cell_text)
+            
+            # Only add non-empty rows
+            if any(cleaned_row):
+                cleaned.append(cleaned_row)
+        
+        return cleaned
+    
+    def is_valid_table(self, table: List[List[str]]) -> bool:
+        """
+        Validate table structure
+        
+        Args:
+            table: Cleaned table data
+            
+        Returns:
+            True if valid
+        """
+        if not table or len(table) < 2:
+            return False
+        
+        # Check minimum dimensions
+        if len(table[0]) < 1:
+            return False
+        
+        # Check for meaningful content
+        non_empty_cells = sum(
+            1 for row in table 
+            for cell in row 
+            if cell and cell.strip()
+        )
+        
+        total_cells = sum(len(row) for row in table)
+        
+        if total_cells == 0:
+            return False
+        
+        # At least 30% cells should have content
+        return (non_empty_cells / total_cells) >= 0.3

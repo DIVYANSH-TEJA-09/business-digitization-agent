@@ -1,57 +1,80 @@
 """
-Module: logger.py
-Purpose: Centralized logging configuration.
-
-Provides a consistent logger across all modules with structured
-output format including timestamp, module, level, and message.
+Logging utility with structured logging support
 """
-
 import logging
 import sys
-from pathlib import Path
+from typing import Optional
+from datetime import datetime
 
-from backend.config import settings, PROJECT_ROOT
 
-
-def get_logger(name: str) -> logging.Logger:
+def get_logger(
+    name: str,
+    level: int = logging.INFO,
+    log_file: Optional[str] = None
+) -> logging.Logger:
     """
-    Create and return a configured logger instance.
-
+    Get or create a logger with consistent formatting
+    
     Args:
-        name: Logger name (typically __name__ of calling module)
-
+        name: Logger name (usually __name__)
+        level: Logging level
+        log_file: Optional file path for file logging
+        
     Returns:
-        Configured logging.Logger instance
+        Configured logger instance
     """
     logger = logging.getLogger(name)
-
-    # Avoid adding duplicate handlers
+    
+    # Avoid adding handlers multiple times
     if logger.handlers:
         return logger
-
-    logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
-
+    
+    logger.setLevel(level)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        fmt='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.DEBUG)
-
-    # Format: timestamp | level | module | message
-    formatter = logging.Formatter(
-        fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    console_handler.setLevel(level)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
-
-    # File handler (optional - create logs dir if needed)
-    log_dir = PROJECT_ROOT / "logs"
-    log_dir.mkdir(exist_ok=True)
-    file_handler = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    # Prevent propagation to root logger
-    logger.propagate = False
-
+    
+    # File handler (optional)
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    
     return logger
+
+
+class JobContextAdapter(logging.LoggerAdapter):
+    """
+    Logger adapter that adds job context to all log messages
+    """
+    
+    def process(self, msg, kwargs):
+        extra = kwargs.get('extra', {})
+        extra.update(self.extra)
+        kwargs['extra'] = extra
+        return msg, kwargs
+
+
+def get_job_logger(job_id: str, level: int = logging.INFO) -> logging.Logger:
+    """
+    Get a logger with job context
+    
+    Args:
+        job_id: Unique job identifier
+        level: Logging level
+        
+    Returns:
+        Logger with job context
+    """
+    logger = get_logger(f"job.{job_id}", level)
+    return JobContextAdapter(logger, {'job_id': job_id})

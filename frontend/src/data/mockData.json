@@ -1,0 +1,119 @@
+{
+  "profile_id": "profile_job_20260318_135002",
+  "business_type": "service",
+  "business_info": {
+    "name": "Trekotrip",
+    "description": "Embark on an unforgettable trekking adventure in the Himalayas. Experience thrilling landscapes and serene beauty with our guided trek packages.",
+    "category": "Adventure Tourism",
+    "location": "Dehradun, Uttarakhand",
+    "contact": {
+      "phone": "+91 95411 22222",
+      "email": "info@trekotrip.com",
+      "website": "https://trekotrip.com"
+    }
+  },
+  "services": [
+    {
+      "service_id": "svc_0",
+      "name": "Bali Pass Trek (6N/7D)",
+      "description": "Embark on the Bali Pass Trek, a captivating Himalayan adventure connecting the Har Ki Dun and Yamunotri valleys.",
+      "category": "Adventure Trek",
+      "pricing": {
+        "base_price": 17000,
+        "currency": "INR",
+        "price_type": "per person"
+      },
+      "details": {
+        "duration": "6N/7D",
+        "difficulty_level": "Moderate to Difficult",
+        "best_time": "September-October"
+      },
+      "image": ""
+    },
+    {
+      "service_id": "svc_1",
+      "name": "Bhrigu Lake Trek (2N/3D)",
+      "description": "Embark on an unforgettable trekking adventure from Gulaba village to the enchanting Bhrigu Lake.",
+      "category": "Adventure Trek",
+      "pricing": {
+        "base_price": 4000,
+        "currency": "INR",
+        "price_type": "per person"
+      },
+      "details": {
+        "duration": "2N/3D",
+        "difficulty_level": "Easy",
+        "best_time": "April to October"
+      },
+      "image": ""
+    },
+    {
+      "service_id": "svc_2",
+      "name": "Buran Ghati with Chandernahan",
+      "description": "A breathtaking adventure through the pristine landscapes of the Himalayas.",
+      "category": "Adventure Trek",
+      "pricing": {
+        "base_price": 14500,
+        "currency": "INR",
+        "price_type": "per person"
+      },
+      "details": {
+        "duration": "6N/7D",
+        "difficulty_level": "Moderate",
+        "best_time": "May-July, Sept-Oct"
+      },
+      "image": ""
+    },
+    {
+      "service_id": "svc_3",
+      "name": "Friendship Peak",
+      "description": "Prepare for an exhilarating climb to Friendship Peak, nestled at an elevation of 5289 meters in the Pir Panjal range.",
+      "category": "Adventure Trek",
+      "pricing": {
+        "base_price": 20500,
+        "currency": "INR",
+        "price_type": "per person"
+      },
+      "details": {
+        "duration": "6N/7D",
+        "difficulty_level": "Moderate to Difficult",
+        "best_time": "May-Oct"
+      },
+      "image": ""
+    },
+    {
+      "service_id": "svc_4",
+      "name": "Gaumukh Tapovan",
+      "description": "A thrilling adventure that promises breathtaking views and unforgettable experiences!",
+      "category": "Adventure Trek",
+      "pricing": {
+        "base_price": 12000,
+        "currency": "INR",
+        "price_type": "per person"
+      },
+      "details": {
+        "duration": "5N/6D",
+        "difficulty_level": "Moderate",
+        "best_time": "May end to October"
+      },
+      "image": ""
+    },
+    {
+      "service_id": "svc_6",
+      "name": "Triund Trek (1N/2D)",
+      "description": "Embark on a thrilling adventure in Himachal Pradesh with the Triund Trek.",
+      "category": "Adventure Trek",
+      "pricing": {
+        "base_price": 13000,
+        "currency": "INR",
+        "price_type": "per person"
+      },
+      "details": {
+        "duration": "1N/2D",
+        "difficulty_level": "Easy to Moderate",
+        "best_time": "March-June & Sept-Dec"
+      },
+      "image": ""
+    }
+  ]
+}

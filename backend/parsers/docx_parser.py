@@ -1,233 +1,330 @@
 """
-Module: docx_parser.py
-Purpose: Extract text, tables, and metadata from DOCX documents.
+DOCX Parser
 
-Uses python-docx to parse Word documents, extracting paragraphs,
-tables, and basic metadata while preserving document structure.
+Extracts text, tables, and images from DOCX files using python-docx.
 """
-
+import os
+import zipfile
+import io
 from pathlib import Path
-from typing import Any, Dict, List
-from zipfile import BadZipFile
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 
 from docx import Document
-from docx.table import Table as DocxTable
+from docx.document import Document as DocumentType
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
-from backend.models.exceptions import CorruptedFileError, DocumentParsingError
-from backend.models.schemas import (
-    DocumentMetadata,
-    FileType,
-    Page,
-    ParsedDocument,
-)
-from backend.utils.logger import get_logger
-from backend.utils.text_utils import clean_text
+from PIL import Image
 
-logger = get_logger(__name__)
+from backend.models.schemas import ParsedDocument, Page, DocumentMetadata
+from backend.models.enums import FileType
+from backend.parsers.base_parser import BaseParser
 
 
-class DOCXParser:
+class DOCXParser(BaseParser):
     """
-    DOCX document parser using python-docx.
-
+    DOCX parser with structure preservation
+    
     Extracts:
-        - Paragraphs with style information
-        - Tables with structure
-        - Document metadata (title, author)
-        - Embedded image references
-
-    Note: DOCX doesn't have natural "pages" like PDF.
-    We treat the entire document as a single page and use
-    paragraph styles to maintain structure.
+    - Paragraphs with formatting
+    - Tables
+    - Embedded images
     """
-
+    
+    def __init__(self):
+        """Initialize DOCX parser"""
+        super().__init__()
+        self.supported_extensions = ['.docx', '.doc']
+    
     def parse(self, file_path: str) -> ParsedDocument:
         """
-        Parse a DOCX file and extract all content.
-
+        Parse DOCX file
+        
         Args:
-            file_path: Path to the DOCX file
-
+            file_path: Path to DOCX file
+            
         Returns:
-            ParsedDocument with content and metadata
-
-        Raises:
-            FileNotFoundError: If file doesn't exist
-            CorruptedFileError: If DOCX is corrupted
-            DocumentParsingError: For other parsing errors
+            ParsedDocument object
         """
-        path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"DOCX file not found: {file_path}")
-
-        logger.info(f"Parsing DOCX: {path.name}")
-
+        self.validate_file(file_path)
+        
         try:
-            doc = Document(file_path)
-        except BadZipFile:
-            raise CorruptedFileError(
-                f"Corrupted DOCX file (invalid ZIP structure): {file_path}"
-            )
-        except Exception as e:
-            raise DocumentParsingError(
-                f"Failed to open DOCX: {e}"
-            ) from e
-
-        try:
-            return self._extract_content(doc, file_path)
-        except Exception as e:
-            raise DocumentParsingError(
-                f"Failed to parse DOCX content: {e}"
-            ) from e
-
-    def _extract_content(
-        self, doc: Document, file_path: str
-    ) -> ParsedDocument:
-        """Extract all content from a DOCX document."""
-        # Extract text from paragraphs
-        text_parts: List[str] = []
-        elements: List[Dict[str, Any]] = []
-
+            return self._parse_docx(file_path)
+        except zipfile.BadZipFile:
+            # Try old DOC format (limited support)
+            return self._parse_doc_fallback(file_path)
+    
+    def _parse_docx(self, docx_path: str) -> ParsedDocument:
+        """
+        Parse DOCX file
+        
+        Args:
+            docx_path: Path to DOCX file
+            
+        Returns:
+            ParsedDocument object
+        """
+        doc = Document(docx_path)
+        
+        # Extract elements
+        elements = []
+        full_text_parts = []
+        tables = []
+        
+        # Iterate through document content
         for para in doc.paragraphs:
-            if not para.text.strip():
-                text_parts.append("")
-                continue
-
-            text = clean_text(para.text)
-            style_name = para.style.name if para.style else "Normal"
-
-            text_parts.append(text)
+            if para.text.strip():
+                para_data = self._parse_paragraph(para)
+                elements.append({
+                    'type': 'paragraph',
+                    'data': para_data
+                })
+                full_text_parts.append(para.text)
+        
+        # Extract tables separately
+        for table in doc.tables:
+            table_data = self._parse_table(table)
             elements.append({
-                "type": "paragraph",
-                "text": text,
-                "style": style_name,
-                "is_heading": style_name.startswith("Heading"),
-                "heading_level": self._get_heading_level(style_name),
+                'type': 'table',
+                'data': table_data
             })
-
-        # Extract tables
-        tables = self._extract_tables(doc)
-
-        # Extract image references
-        image_refs = self._get_image_references(doc)
-
-        # Extract metadata
-        metadata = self._extract_metadata(doc, file_path)
-
-        # Combine all text
-        full_text = "\n".join(text_parts)
-        full_text = clean_text(full_text)
-
-        # For table text, add it to the full text as well
-        table_text_parts = []
-        for table_data in tables:
+            tables.append(table_data)
+            # Add table text to full text
             for row in table_data:
-                table_text_parts.append(" | ".join(
-                    str(cell) for cell in row
-                ))
-
-        if table_text_parts:
-            full_text += "\n\n" + "\n".join(table_text_parts)
-
-        # Create a single "page" (DOCX doesn't have real pages)
+                full_text_parts.append(' | '.join(row))
+        
+        # Extract images
+        images = self._extract_images(doc, docx_path)
+        
+        # Build full text
+        full_text = '\n\n'.join(full_text_parts)
+        
+        # DOCX doesn't have pages, treat as single page
         page = Page(
             number=1,
             text=full_text,
             tables=tables,
-            images=image_refs,
-            metadata={
-                "elements": elements,
-                "paragraph_count": len(doc.paragraphs),
-                "table_count": len(tables),
-                "image_count": len(image_refs),
-            },
+            images=images,
+            metadata={'elements_count': len(elements), 'paragraphs': len(doc.paragraphs), 'tables': len(doc.tables)}
         )
-
-        doc_result = ParsedDocument(
-            source_file=file_path,
+        
+        return ParsedDocument(
+            doc_id=self.generate_doc_id(docx_path),
+            source_file=docx_path,
             file_type=FileType.DOCX,
             pages=[page],
             total_pages=1,
-            full_text=full_text,
-            metadata=metadata,
+            metadata=self._extract_metadata(doc, docx_path),
+            parsing_errors=[]
         )
-
-        logger.info(
-            f"DOCX parsed: {Path(file_path).name} — "
-            f"{len(doc.paragraphs)} paragraphs, "
-            f"{len(tables)} tables, "
-            f"{len(image_refs)} images"
-        )
-
-        return doc_result
-
-    def _extract_tables(self, doc: Document) -> List[List[List[str]]]:
-        """Extract all tables from the document."""
-        tables = []
-
-        for table in doc.tables:
-            table_data = []
-            for row in table.rows:
-                row_data = []
-                for cell in row.cells:
-                    cell_text = clean_text(cell.text)
-                    row_data.append(cell_text)
-                table_data.append(row_data)
-
-            # Skip empty tables
-            if any(any(cell for cell in row) for row in table_data):
-                tables.append(table_data)
-
-        return tables
-
-    def _get_image_references(self, doc: Document) -> List[Dict[str, Any]]:
+    
+    def _iter_block_items(self, doc: DocumentType):
         """
-        Get references to embedded images in the DOCX.
-
-        DOCX stores images in the ZIP's word/media/ folder.
-        We extract metadata here; actual images are extracted
-        by the MediaExtractionAgent later.
+        Iterate through document block items (paragraphs and tables)
+        
+        Args:
+            doc: python-docx Document object
+            
+        Yields:
+            Paragraph or Table objects
+        """
+        from docx.text.paragraph import Paragraph
+        from docx.table import Table
+        
+        for child in doc.element.body.iterchildren():
+            if child.tag.endswith('tbl'):  # Table - check tables first
+                yield Table(child, doc)
+            elif child.tag.endswith('p'):  # Paragraph
+                # Skip paragraphs inside tables (they're handled separately)
+                parent_tbl = child.getparent()
+                if parent_tbl is not None and parent_tbl.tag.endswith('tbl'):
+                    continue
+                yield Paragraph(child, doc)
+    
+    def _parse_paragraph(self, paragraph) -> Dict[str, Any]:
+        """
+        Parse paragraph with formatting
+        
+        Args:
+            paragraph: python-docx Paragraph object
+            
+        Returns:
+            Paragraph data dictionary
+        """
+        return {
+            'text': paragraph.text,
+            'style': paragraph.style.name if paragraph.style else 'Normal',
+            'is_heading': self._is_heading(paragraph),
+            'alignment': str(paragraph.alignment) if paragraph.alignment else None,
+            'runs_count': len(paragraph.runs)
+        }
+    
+    def _is_heading(self, paragraph) -> bool:
+        """
+        Check if paragraph is a heading
+        
+        Args:
+            paragraph: python-docx Paragraph object
+            
+        Returns:
+            True if heading
+        """
+        try:
+            if not paragraph.style:
+                return False
+            
+            style_name = paragraph.style.name.lower() if paragraph.style.name else ''
+            return 'heading' in style_name or 'title' in style_name
+        except Exception:
+            return False
+    
+    def _parse_table(self, table) -> List[List[str]]:
+        """
+        Parse table to 2D array
+        
+        Args:
+            table: python-docx Table object
+            
+        Returns:
+            2D list of cell values
+        """
+        table_data = []
+        
+        for row in table.rows:
+            row_data = []
+            for cell in row.cells:
+                cell_text = cell.text.strip()
+                row_data.append(cell_text)
+            table_data.append(row_data)
+        
+        return table_data
+    
+    def _extract_images(self, doc: DocumentType, docx_path: str) -> List[Dict[str, Any]]:
+        """
+        Extract embedded images from DOCX
+        
+        Args:
+            doc: python-docx Document object
+            docx_path: Path to DOCX file
+            
+        Returns:
+            List of image metadata
         """
         images = []
+        
         try:
-            for idx, rel in enumerate(doc.part.rels.values()):
-                if "image" in rel.reltype:
-                    images.append({
-                        "index": idx,
-                        "rel_id": rel.rId,
-                        "target": rel.target_ref,
-                        "type": "embedded",
-                    })
-        except Exception as e:
-            logger.debug(f"Could not extract image references: {e}")
-
+            # DOCX files are ZIP archives
+            with zipfile.ZipFile(docx_path) as docx_zip:
+                # Images are in word/media/ folder
+                media_files = [
+                    f for f in docx_zip.namelist()
+                    if f.startswith('word/media/')
+                ]
+                
+                for i, media_file in enumerate(media_files):
+                    try:
+                        # Extract image bytes
+                        image_bytes = docx_zip.read(media_file)
+                        
+                        # Determine format
+                        image_format = self._detect_image_format(media_file)
+                        
+                        # Get dimensions
+                        try:
+                            with Image.open(io.BytesIO(image_bytes)) as img:
+                                width, height = img.size
+                        except Exception:
+                            width, height = 0, 0
+                        
+                        images.append({
+                            'image_id': f"docx_img_{i}",
+                            'file_name': os.path.basename(media_file),
+                            'width': width,
+                            'height': height,
+                            'file_size': len(image_bytes),
+                            'mime_type': f"image/{image_format}",
+                            'data': image_bytes  # Bytes for later use
+                        })
+                        
+                    except Exception:
+                        pass
+                        
+        except Exception:
+            pass
+        
         return images
-
-    def _extract_metadata(
-        self, doc: Document, file_path: str
-    ) -> DocumentMetadata:
-        """Extract document metadata from DOCX core properties."""
-        props = doc.core_properties
-
+    
+    def _detect_image_format(self, filename: str) -> str:
+        """
+        Detect image format from filename
+        
+        Args:
+            filename: Image filename
+            
+        Returns:
+            Format string (jpeg, png, gif, etc.)
+        """
+        ext = os.path.splitext(filename)[1].lower()
+        
+        format_map = {
+            '.jpg': 'jpeg',
+            '.jpeg': 'jpeg',
+            '.png': 'png',
+            '.gif': 'gif',
+            '.bmp': 'bmp',
+            '.webp': 'webp',
+        }
+        
+        return format_map.get(ext, 'unknown')
+    
+    def _extract_metadata(self, doc: DocumentType, docx_path: str) -> DocumentMetadata:
+        """
+        Extract DOCX metadata
+        
+        Args:
+            doc: python-docx Document object
+            docx_path: Path to file
+            
+        Returns:
+            DocumentMetadata object
+        """
+        core_props = doc.core_properties
+        
         return DocumentMetadata(
-            title=props.title or None,
-            author=props.author or None,
-            creation_date=str(props.created) if props.created else None,
-            modification_date=str(props.modified) if props.modified else None,
-            page_count=1,  # DOCX doesn't track pages reliably
-            file_size=Path(file_path).stat().st_size,
+            title=core_props.title,
+            author=core_props.author,
+            creation_date=core_props.created,
+            modification_date=core_props.modified,
+            page_count=1,  # DOCX doesn't have fixed pages
+            file_size=os.path.getsize(docx_path)
         )
-
-    def _get_heading_level(self, style_name: str) -> int:
+    
+    def _parse_doc_fallback(self, doc_path: str) -> ParsedDocument:
         """
-        Extract heading level from style name.
-
-        'Heading 1' -> 1, 'Heading 2' -> 2, etc.
-        Returns 0 for non-heading styles.
+        Fallback for old DOC format (limited support)
+        
+        Args:
+            doc_path: Path to DOC file
+            
+        Returns:
+            ParsedDocument object
         """
-        if not style_name.startswith("Heading"):
-            return 0
+        # Try to read as plain text (best effort)
         try:
-            return int(style_name.split()[-1])
-        except (ValueError, IndexError):
-            return 0
+            with open(doc_path, 'r', encoding='utf-8', errors='ignore') as f:
+                text = f.read()
+            
+            return ParsedDocument(
+                doc_id=self.generate_doc_id(doc_path),
+                source_file=doc_path,
+                file_type=FileType.DOC,
+                pages=[Page(number=1, text=text, tables=[], images=[])],
+                total_pages=1,
+                metadata=DocumentMetadata(
+                    file_size=os.path.getsize(doc_path)
+                ),
+                parsing_errors=['DOC format - limited parsing, text only']
+            )
+        except Exception as e:
+            raise Exception(f"Failed to parse DOC file: {str(e)}")

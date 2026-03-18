@@ -1,300 +1,127 @@
-# Business Digitization Agent
+# Digi-Biz - Agentic Business Digitization
 
-🤖 An AI-powered multi-agent system that transforms unstructured business documents into structured digital business profiles.
+**Transform business documents into beautiful digital profiles using AI**
 
-## Overview
+---
 
-This system accepts a ZIP file containing business documents (PDFs, images, spreadsheets) and automatically:
+## 🚀 Quick Start
 
-1. **Discovers and classifies** all files
-2. **Parses documents** extracting text and structure
-3. **Extracts tables** with type classification
-4. **Extracts images** from PDFs using PyMuPDF
-5. **Detects objects** in images using YOLO
-6. **Analyzes images** using Qwen 3.5 vision model
-7. **Maps data** to a structured business profile schema
-8. **Validates** the profile for completeness
-
-## Features
-
-### Multi-Agent Architecture
-- **File Discovery Agent**: Extracts and classifies files from ZIP
-- **Document Parsing Agent**: Parses PDF, DOCX, XLSX files
-- **Table Extraction Agent**: Identifies and structures tables
-- **Media Extraction Agent**: Extracts embedded and standalone media
-- **Vision Agent**: Analyzes images with Qwen 3.5 0.8B
-- **Schema Mapping Agent**: Maps data to business profile schema
-- **Validation Agent**: Validates and scores the profile
-
-### AI-Powered Processing
-- **YOLO v8 Nano**: Object detection in extracted images
-- **Qwen 3.5 0.8B**: Vision analysis for image descriptions
-- **GPT-OSS-120B**: Schema mapping and reasoning (via Groq)
-
-### Streamlit UI
-- 📤 Upload & Process interface
-- 🔄 Real-time pipeline visualization
-- 📊 Profile viewer with tabs
-- 📋 Processing logs
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.10+
-- Ollama with Qwen 3.5 0.8B model
-- Groq API key (optional, for GPT-OSS-120B)
-
-### Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd business-digitization-agent
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Set up environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys
-   ```
-
-4. **Pull Ollama model**:
-   ```bash
-   ollama pull qwen3.5:0.8b
-   ```
-
-5. **Start Ollama** (if not running):
-   ```bash
-   ollama serve
-   ```
-
-### Running the Application
-
-#### 1. Start the Backend API
+### 1. Install Dependencies
 
 ```bash
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+pip install -r requirements.txt
 ```
 
-The API will be available at `http://localhost:8000`
+### 2. Configure Environment
 
-#### 2. Start the Streamlit UI
+Create `.env` file:
+```bash
+GROQ_API_KEY=gsk_your_key_here
+```
+
+Get your free API key at: https://console.groq.com
+
+### 3. Run the App
 
 ```bash
-streamlit run streamlit_app/app.py
+streamlit run app.py
 ```
 
-The UI will open at `http://localhost:8501`
+Open http://localhost:8501
 
-### API Endpoints
+---
 
-- `POST /api/upload-and-process`: Upload ZIP and start pipeline
-- `GET /api/status/{job_id}`: Get job status
-- `GET /api/job-data/{job_id}`: Get complete job data
-- `GET /api/profile/{job_id}`: Get business profile
-- `GET /api/health`: Health check
+## 📋 Features
 
-## Project Structure
+✅ **Upload ZIP** - PDFs, DOCX, images, videos  
+✅ **AI Processing** - 8 AI agents extract data  
+✅ **Business Profile** - Beautiful digital profile  
+✅ **Edit & Export** - Modify and download as JSON  
+
+---
+
+## 🎯 Works For Any Business
+
+- 🍽️ **Restaurants** - Menus, dishes, prices
+- 🏪 **Retail** - Products, inventory, specs
+- 💼 **Services** - Packages, pricing, policies
+- 🏨 **Hotels** - Rooms, amenities, rates
+- 🥾 **Travel** - Tours, itineraries, inclusions
+- **And more!**
+
+---
+
+## 📁 Project Structure
 
 ```
-business-digitization-agent/
+digi-biz/
+├── app.py                      # Streamlit app
 ├── backend/
-│   ├── agents/           # Multi-agent implementations
-│   │   ├── file_discovery.py
-│   │   ├── media_extraction.py
-│   │   ├── schema_mapping.py
-│   │   ├── table_extraction.py
-│   │   └── vision_agent.py
-│   ├── parsers/          # Document parsers
-│   ├── indexing/         # PageIndex adapter
-│   ├── validation/       # Schema validation
-│   ├── models/           # Pydantic schemas
-│   ├── utils/            # Utilities (LLM, storage, logging)
-│   ├── config.py         # Configuration
-│   ├── pipeline.py       # Main pipeline orchestrator
-│   └── main.py           # FastAPI application
-├── streamlit_app/        # Streamlit UI
-│   ├── app.py           # Main Streamlit app
-│   └── README.md
-├── storage/             # Generated storage directory
-│   ├── uploads/
-│   ├── extracted/
-│   ├── profiles/
-│   ├── index/
-│   └── media/
-├── logs/                # Application logs
-├── .env                 # Environment configuration
-├── .env.example         # Example environment file
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
+│   ├── api/main.py            # FastAPI backend
+│   ├── agents/                # 8 AI agents
+│   ├── models/schemas.py      # Data models
+│   └── utils/                 # Utilities
+├── frontend/                   # Next.js (optional)
+├── storage/                    # Profiles storage
+├── docs/                       # Documentation
+├── requirements.txt
+└── .env.example
 ```
 
-## Configuration
+---
 
-Edit `.env` to configure:
+## 🔧 API Endpoints
 
-```env
-# Groq API (for GPT-OSS-120B)
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_BASE_URL=https://api.groq.com/openai/v1
-GROQ_MODEL=openai/gpt-oss-120b
-
-# Ollama (for Qwen 3.5 0.8B)
-OLLAMA_BASE_URL=http://localhost:11434/v1
-OLLAMA_VISION_MODEL=qwen3.5:0.8b
-OLLAMA_API_KEY=
-
-# Storage paths
-UPLOAD_DIR=storage/uploads
-EXTRACTED_DIR=storage/extracted
-PROFILES_DIR=storage/profiles
-INDEX_DIR=storage/index
-MEDIA_DIR=storage/media
-
-# Processing settings
-MAX_ZIP_SIZE_MB=500
-MAX_CONCURRENT_PARSERS=4
-LOG_LEVEL=INFO
+```
+POST   /api/upload              # Upload ZIP
+GET    /api/status/{job_id}     # Processing status
+GET    /api/profiles            # List profiles
+GET    /api/profile/{job_id}    # Get profile
+PUT    /api/profile/{job_id}    # Update profile
+DELETE /api/profile/{job_id}    # Delete profile
+POST   /api/profile/{job_id}/export  # Export JSON
 ```
 
-## Usage Example
+---
 
-1. **Prepare a ZIP file** containing:
-   - Business registration documents (PDF)
-   - Product/service catalogs (PDF, DOCX)
-   - Price lists (PDF, XLSX, CSV)
-   - Business images (JPG, PNG)
+## 📊 Processing Pipeline
 
-2. **Upload via Streamlit UI**:
-   - Go to "Upload & Process" page
-   - Drag and drop the ZIP file
-   - Click "Start Processing"
+1. **File Discovery** - Extract & classify files
+2. **Document Parsing** - Extract text from PDFs/DOCX
+3. **Table Extraction** - Detect & classify tables
+4. **Media Extraction** - Extract images
+5. **Vision Analysis** - Analyze images (Groq)
+6. **Indexing** - Build search index
+7. **Schema Mapping** - Extract business data (LLM)
+8. **Validation** - Validate & score profile
 
-3. **Monitor progress**:
-   - Navigate to "Pipeline View"
-   - See real-time progress through 8 stages
-   - Expand stages to see agent inputs/outputs
+---
 
-4. **View results**:
-   - Go to "Profile Viewer"
-   - Browse Business Info, Products, Services
-   - View Media Gallery with YOLO detections
-   - Check Extracted Tables
+## 🎨 Tech Stack
 
-## Data Schema
+- **Frontend:** Streamlit
+- **Backend:** FastAPI + Python
+- **AI:** Groq API (Llama-4-Scout-17B)
+- **Storage:** Local JSON files
 
-### Business Profile
+---
 
-```json
-{
-  "business_info": {
-    "description": "...",
-    "working_hours": "...",
-    "location": {...},
-    "contact": {...},
-    "payment_methods": [...],
-    "tags": [...]
-  },
-  "business_type": "service|product|mixed",
-  "products": [...],
-  "services": [{
-    "name": "...",
-    "description": "...",
-    "category": "...",
-    "pricing": {...},
-    "itinerary": [...],
-    "inclusions": [...],
-    "exclusions": [...]
-  }],
-  "media": [...]
-}
-```
+## 📖 Documentation
 
-## Logging
+See `docs/` folder for detailed documentation:
+- `HACKATHON_QUICKSTART.md` - Quick start guide
+- `CURRENT_STATUS.md` - Project status
+- All technical documentation
 
-The system provides comprehensive logging:
+---
 
-- **Console logs**: Real-time output in terminal
-- **File logs**: Saved to `logs/app.log`
-- **UI logs**: Visible in Streamlit "Logs" page
+## 🏆 Hackathon Ready!
 
-All major operations are logged with timestamps and context.
+**90-second demo:**
+1. Upload ZIP (10 sec)
+2. Watch processing (60 sec)
+3. Show profile (20 sec)
 
-## Troubleshooting
+---
 
-### Qwen 3.5 Model Not Found
-
-```bash
-# Pull the model
-ollama pull qwen3.5:0.8b
-
-# Verify it's available
-ollama list
-
-# Restart Ollama if needed
-ollama serve
-```
-
-### YOLO Model Loading Issues
-
-The YOLO model downloads automatically on first use. Ensure you have internet connection.
-
-### Backend Connection Errors
-
-1. Check if backend is running: `curl http://localhost:8000/api/health`
-2. Verify port 8000 is not in use
-3. Check logs for errors
-
-### API Key Issues
-
-- Groq API key is optional (for GPT-OSS-120B)
-- Ollama is local by default (no API key needed)
-- Update `.env` with correct API keys
-
-## Development
-
-### Running Tests
-
-```bash
-pytest tests/ -v
-```
-
-### Code Style
-
-The project follows Python type hints and Pydantic models for data validation.
-
-### Adding New Agents
-
-1. Create agent class in `backend/agents/`
-2. Add to pipeline in `backend/pipeline.py`
-3. Update progress tracking
-
-## Architecture Documentation
-
-See the following documents for detailed architecture:
-
-- `SYSTEM_ARCHITECTURE.md`: Complete system architecture
-- `AGENT_PIPELINE.md`: Agent workflow details
-- `DATA_SCHEMA.md`: Data model specifications
-- `MULTIMODAL_PROCESSING.md`: Image/video processing
-
-## License
-
-MIT License
-
-## Contributing
-
-Contributions are welcome! Please read the contributing guidelines before submitting PRs.
-
-## Support
-
-For issues and questions:
-- Check existing documentation
-- Review logs for errors
-- Open an issue on GitHub
+**Built with ❤️ for any business owner!**
