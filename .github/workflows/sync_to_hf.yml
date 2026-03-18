@@ -12,12 +12,19 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           lfs: true
 
       - name: Push to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Syncs local main branch directly to Hugging Face Space
+          # Remove GitHub's history to avoid Hugging Face rejecting old deleted binary files
+          rm -rf .git
+          git init
+          git branch -m main
+          git add .
+          git config user.email "bot@action.com"
+          git config user.name "Deployment Bot"
+          git commit -m "Automated deployment to Hugging Face"
           git push --force https://Divs0910:$HF_TOKEN@huggingface.co/spaces/Divs0910/Digi-Biz main
