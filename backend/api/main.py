@@ -106,6 +106,44 @@ async def upload_zip(file: UploadFile = File(...)):
 
     return {"job_id": job_id, "status": "processing"}
 
+# ─── Sample Data for Hackathon Evaluators ──────────────────────────
+SAMPLES_DIR = Path("./test_data")
+
+@app.get("/api/samples")
+async def list_samples():
+    """List available sample ZIP files for quick demo"""
+    samples = []
+    if SAMPLES_DIR.exists():
+        for f in sorted(SAMPLES_DIR.glob("*.zip")):
+            samples.append({
+                "name": f.stem,
+                "filename": f.name,
+                "size_mb": round(f.stat().st_size / (1024 * 1024), 1)
+            })
+    return {"samples": samples}
+
+@app.post("/api/samples/{filename}/run")
+async def run_sample(filename: str):
+    """Start processing a sample ZIP file directly"""
+    zip_path = SAMPLES_DIR / filename
+    if not zip_path.exists() or not filename.endswith('.zip'):
+        raise HTTPException(404, f"Sample '{filename}' not found")
+    
+    job_id = generate_job_id()
+    jobs[job_id] = {
+        "job_id": job_id,
+        "status": "processing",
+        "progress": 0.0,
+        "current_phase": "upload",
+        "created_at": datetime.now().isoformat(),
+        "profile_path": None
+    }
+    
+    import asyncio
+    asyncio.create_task(process_job(job_id, str(zip_path)))
+    
+    return {"job_id": job_id, "status": "processing"}
+
 @app.get("/api/status/{job_id}")
 async def get_status(job_id: str):
     """Get processing status"""

@@ -64,6 +64,29 @@ export async function uploadZip(file: File): Promise<{ job_id: string }> {
   return response.json();
 }
 
+export interface SampleZip {
+  name: string;
+  filename: string;
+  size_mb: number;
+}
+
+export async function getSamples(): Promise<{ samples: SampleZip[] }> {
+  const response = await fetch(`${API_BASE_URL}/samples`);
+  if (!response.ok) throw new Error('Failed to get samples');
+  return response.json();
+}
+
+export async function runSample(filename: string): Promise<{ job_id: string }> {
+  const response = await fetch(`${API_BASE_URL}/samples/${encodeURIComponent(filename)}/run`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to run sample');
+  }
+  return response.json();
+}
+
 export async function getJobStatus(jobId: string): Promise<JobStatus> {
   const response = await fetch(`${API_BASE_URL}/status/${jobId}`);
 
