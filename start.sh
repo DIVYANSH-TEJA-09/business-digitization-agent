@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Start Caddy Reverse Proxy in the background to route Port 7860
+echo "Starting Caddy..."
 ./caddy run --config Caddyfile &
 
-# Start FastAPI Backend in the background (listen on 8000)
-uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 &
+echo "Starting FastAPI Backend..."
+uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --workers 1 &
 
-# Start Next.js Frontend (listen on 3000)
+echo "Starting Next.js Frontend with 1GB memory limit..."
 cd frontend
-npm start
+NODE_OPTIONS="--max-old-space-size=1024" npm start
