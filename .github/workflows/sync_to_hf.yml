@@ -21,10 +21,14 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Remove GitHub's history to avoid Hugging Face rejecting old deleted binary files
           rm -rf .git
           git init
           git branch -m main
+          
+          # Initialize LFS explicitly for zip files (Hugging Face strict binary requirements)
+          git lfs install
+          git lfs track "*.zip"
+          
           git add .
           git config user.email "bot@action.com"
           git config user.name "Deployment Bot"
